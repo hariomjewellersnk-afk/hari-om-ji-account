@@ -54,7 +54,7 @@
   #loader { display: none; text-align: center; color: var(--gold); padding: 8px; font-size: 0.85rem; }
   #syncStatus { text-align: center; font-size: 0.72rem; color: #888; margin-bottom: 8px; }
 
-  /* Printable Invoice Overlay (Works on iPhone, Android, Windows) */
+  /* Printable Invoice Overlay */
   #printArea { display: none; }
   @media print {
     body * { visibility: hidden; }
@@ -139,12 +139,13 @@
         <div><label>ग्रॉस वज़न (ग्राम)</label><input type="number" step="0.001" inputmode="decimal" id="bGross" oninput="calcBill()"></div>
         <div><label>नेट वज़न (ग्राम)</label><input type="number" step="0.001" inputmode="decimal" id="bNet" oninput="calcBill()"></div>
         <div><label>लाइव रेट (₹ प्रति ग्राम)</label><input type="number" step="0.01" inputmode="decimal" id="bRate" oninput="calcBill()"></div>
-        <div><label>कुल मेकिंग चार्ज (₹)</label><input type="number" step="0.01" inputmode="decimal" id="bMaking" value="0" oninput="calcBill()"></div>
+        <div><label>मेकिंग चार्ज (%)</label><input type="number" step="0.1" inputmode="decimal" id="bMakingPct" placeholder="जैसे: 10 या 12" oninput="calcBill()"></div>
+        <div><label>मेकिंग राशि (₹ ऑटो)</label><input type="number" id="bMakingAmt" readonly style="color:#bbb;"></div>
         <div>
           <label>GST (%)</label>
           <select id="bGstPct" onchange="calcBill()"><option value="3">3% (पक्का GST बिल)</option><option value="0">0% (कच्चा / एस्टीमेट)</option></select>
         </div>
-        <div><label>कुल बिल राशि (₹)</label><input type="number" id="bTotal" readonly style="color:var(--gold); font-weight:bold;"></div>
+        <div class="full"><label>कुल बिल राशि (₹)</label><input type="number" id="bTotal" readonly style="color:var(--gold); font-weight:bold; font-size:1.15rem;"></div>
         <div><label>जमा राशि (Paid ₹)</label><input type="number" step="0.01" inputmode="decimal" id="bPaid" oninput="calcBill()"></div>
         <div><label>बकाया उधार (Due ₹)</label><input type="number" id="bDue" readonly style="color:#e74c3c;"></div>
         <div class="full">
@@ -235,7 +236,7 @@
   </div>
 </div>
 
-<!-- Universal Printable Invoice Area (iPhone, Android & Windows Compatible) -->
+<!-- Universal Printable Invoice Area -->
 <div id="printArea"></div>
 
 <nav class="no-print">
@@ -380,10 +381,14 @@
   function calcBill() {
     const net = parseFloat(document.getElementById("bNet").value) || 0;
     const rate = parseFloat(document.getElementById("bRate").value) || 0;
-    const making = parseFloat(document.getElementById("bMaking").value) || 0;
+    const makingPct = parseFloat(document.getElementById("bMakingPct").value) || 0;
     const gstPct = parseFloat(document.getElementById("bGstPct").value) || 0;
 
-    const base = (net * rate) + making;
+    const metalValue = net * rate;
+    const makingAmt = Math.round(metalValue * (makingPct / 100));
+    document.getElementById("bMakingAmt").value = makingAmt;
+
+    const base = metalValue + makingAmt;
     const gstAmt = base * (gstPct / 100);
     const total = Math.round(base + gstAmt);
     document.getElementById("bTotal").value = total;
@@ -395,9 +400,10 @@
   function getFormBillData() {
     const net = parseFloat(document.getElementById("bNet").value) || 0;
     const rate = parseFloat(document.getElementById("bRate").value) || 0;
-    const making = parseFloat(document.getElementById("bMaking").value) || 0;
+    const makingPct = parseFloat(document.getElementById("bMakingPct").value) || 0;
+    const makingAmt = Math.round((net * rate) * (makingPct / 100));
     const gstPct = parseFloat(document.getElementById("bGstPct").value) || 0;
-    const gstAmt = Math.round(((net * rate) + making) * (gstPct / 100));
+    const gstAmt = Math.round(((net * rate) + makingAmt) * (gstPct / 100));
 
     return {
       billNo: document.getElementById("bNo").value,
@@ -409,7 +415,8 @@
       grossWt: document.getElementById("bGross").value || net,
       netWt: net,
       rate: rate,
-      makingCharge: making,
+      makingPct: makingPct,
+      makingCharge: makingAmt,
       gst: gstAmt,
       grandTotal: document.getElementById("bTotal").value || 0,
       paidAmount: document.getElementById("bPaid").value || 0,
@@ -418,9 +425,9 @@
     };
   }
 
-  // Universal Print Function (iPhone AirPrint, Android Print Service, Windows Ctrl+P)
   function printInvoiceObj(inv) {
     const area = document.getElementById("printArea");
+    const mkPctLabel = inv.makingPct ? ` (${inv.makingPct}%)` : "";
     area.innerHTML = `
       <div style="border: 2px solid #000; padding: 18px; max-width: 720px; margin: auto;">
         <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px;">
@@ -460,7 +467,7 @@
               <td style="border: 1px solid #000; padding: 8px; text-align:right;">₹${Math.round((inv.NetWt || inv.netWt) * (inv.Rate || inv.rate))}</td>
             </tr>
             <tr>
-              <td colspan="5" style="border: 1px solid #000; padding: 6px; text-align:right;">Making Charges</td>
+              <td colspan="5" style="border: 1px solid #000; padding: 6px; text-align:right;">Making Charges${mkPctLabel}</td>
               <td style="border: 1px solid #000; padding: 6px; text-align:right;">₹${inv.MakingCharge || inv.makingCharge || 0}</td>
             </tr>
             <tr>
@@ -646,7 +653,8 @@
     if (!bill || !bill.phone || bill.phone === "-") return alert("ग्राहक का मोबाइल नंबर दर्ज करें!");
     let ph = bill.phone.replace(/\D/g, "");
     if (ph.length === 10) ph = "91" + ph;
-    const msg = `*HARI ॐ JEWELLERS*%0AVani Vihar, Adhoiwala, Raipur Road, Dehradun%0APh: 9639200583%0A------------------------%0A*Bill No:* ${bill.billNo}%0A*Date:* ${bill.date}%0A*Customer:* ${bill.customerName}%0A*Item:* ${bill.metalType} (${bill.purity})%0A*Net Wt:* ${bill.netWt} g%0A*Rate:* ₹${bill.rate}/g%0A*Making:* ₹${bill.makingCharge}%0A*GST:* ₹${bill.gst}%0A*Total Amount:* ₹${bill.grandTotal}%0A*Paid:* ₹${bill.paidAmount}%0A*Balance Due:* ₹${bill.balanceDue}%0A------------------------%0Aधन्यवाद! फिर पधारें।`;
+    const mkTxt = bill.makingPct ? `₹${bill.makingCharge} (${bill.makingPct}%)` : `₹${bill.makingCharge}`;
+    const msg = `*HARI ॐ JEWELLERS*%0AVani Vihar, Adhoiwala, Raipur Road, Dehradun%0APh: 9639200583%0A------------------------%0A*Bill No:* ${bill.billNo}%0A*Date:* ${bill.date}%0A*Customer:* ${bill.customerName}%0A*Item:* ${bill.metalType} (${bill.purity})%0A*Net Wt:* ${bill.netWt} g%0A*Rate:* ₹${bill.rate}/g%0A*Making:* ${mkTxt}%0A*GST:* ₹${bill.gst}%0A*Total Amount:* ₹${bill.grandTotal}%0A*Paid:* ₹${bill.paidAmount}%0A*Balance Due:* ₹${bill.balanceDue}%0A------------------------%0Aधन्यवाद! फिर पधारें।`;
     window.open(`https://wa.me/${ph}?text=${msg}`, "_blank");
   }
 
