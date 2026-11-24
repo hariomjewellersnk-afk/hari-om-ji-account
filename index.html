@@ -334,36 +334,65 @@
 
     let fetched = false;
 
-    // 1. Direct CORS-enabled Gold-API (fast & works natively on iOS Safari)
+    // 1. First try reading live rates directly from your Hari Om Jewellers Live Rate App (hari-om-ji)
     try {
-      const [xauRes, xagRes, fxRes] = await Promise.all([
-        fetch("https://api.gold-api.com/price/XAU").then(r => r.json()),
-        fetch("https://api.gold-api.com/price/XAG").then(r => r.json()),
-        fetch("https://open.er-api.com/v6/latest/USD").then(r => r.json())
-      ]);
-      const usdInr = (fxRes && fxRes.rates && fxRes.rates.INR) ? fxRes.rates.INR : 84.5;
-      if (xauRes && xauRes.price) {
-        const g24 = ((xauRes.price * usdInr) / 31.1034768) * 1.06;
-        const s999 = (xagRes && xagRes.price) ? ((xagRes.price * usdInr) / 31.1034768) * 1.06 : 95;
-        setRatesFromSpot(g24, s999);
-        fetched = true;
+      const pageRes = await fetch("https://hariomjewellersnk-afk.github.io/hari-om-ji/?t=" + Date.now());
+      const htmlText = await pageRes.text();
+      const scriptMatch = htmlText.match(/https:\/\/script\.google\.com\/macros\/s\/[a-zA-Z0-9_-]+\/exec/);
+      if (scriptMatch) {
+        const rRes = await fetch(scriptMatch[0] + "?t=" + Date.now());
+        const rJson = await rRes.json();
+        const cfg = rJson.rates || rJson.data || rJson;
+        if (cfg && (cfg.gold24 || cfg.rate24 || cfg.gold22 || cfg.rate22)) {
+          let g24 = parseFloat(cfg.gold24 || cfg.rate24) || 0;
+          let g22 = parseFloat(cfg.gold22 || cfg.rate22) || 0;
+          let g18 = parseFloat(cfg.gold18 || cfg.rate18) || 0;
+          let g14 = parseFloat(cfg.gold14 || cfg.rate14) || 0;
+          let s999 = parseFloat(cfg.silver999 || cfg.silver || cfg.silverRate) || 0;
+
+          if (g24 > 30000) g24 = g24 / 10;
+          if (g22 > 25000) g22 = g22 / 10;
+          if (g18 > 20000) g18 = g18 / 10;
+          if (g14 > 15000) g14 = g14 / 10;
+          if (s999 > 10000) s999 = s999 / 1000;
+
+          if (g24 > 0 || g22 > 0) {
+            liveRates["24K"] = Math.round(g24 || (g22 / 0.916));
+            liveRates["22K"] = Math.round(g22 || (g24 * 0.916));
+            liveRates["18K"] = Math.round(g18 || (liveRates["24K"] * 0.750));
+            liveRates["14K"] = Math.round(g14 || (liveRates["24K"] * 0.585));
+            if (s999 > 0) {
+              liveRates["Silver 999"] = +s999.toFixed(2);
+              liveRates["Silver 925"] = +(s999 * 0.925).toFixed(2);
+            }
+            localStorage.setItem("HOJ_LAST_RATES", JSON.stringify(liveRates));
+            fetched = true;
+          }
+        }
       }
     } catch (e) {}
 
-    // 2. Coinbase Exchange Rates API (CORS-free reliable backup)
+    // 2. Live COMEX Spot (XAU/XAG in USD) + Live USD/INR Exchange Rate
     if (!fetched) {
       try {
-        const cb = await fetch("https://api.coinbase.com/v2/exchange-rates?currency=INR").then(r => r.json());
-        if (cb && cb.data && cb.data.rates && cb.data.rates.XAU) {
-          const xauInr = 1 / parseFloat(cb.data.rates.XAU);
-          const xagInr = cb.data.rates.XAG ? (1 / parseFloat(cb.data.rates.XAG)) : (92 * 31.1034768);
-          setRatesFromSpot((xauInr / 31.1034768) * 1.06, (xagInr / 31.1034768) * 1.06);
+        const [xauRes, xagRes, fxRes] = await Promise.all([
+          fetch("https://api.gold-api.com/price/XAU").then(r => r.json()),
+          fetch("https://api.gold-api.com/price/XAG").then(r => r.json()),
+          fetch("https://open.er-api.com/v6/latest/USD").then(r => r.json())
+        ]);
+        const usdInr = (fxRes && fxRes.rates && fxRes.rates.INR) ? parseFloat(fxRes.rates.INR) : 0;
+        if (xauRes && xauRes.price && usdInr > 70) {
+          // 1 Troy Ounce = 31.1034768g | 6% Indian Customs Duty (5% BCD + 1% AIDC) + local Dehradun bullion premium (~1.5%)
+          const dutyAndPremium = 1.075;
+          const g24 = ((parseFloat(xauRes.price) * usdInr) / 31.1034768) * dutyAndPremium;
+          const s999 = (xagRes && xagRes.price) ? ((parseFloat(xagRes.price) * usdInr) / 31.1034768) * dutyAndPremium : 0;
+          setRatesFromSpot(g24, s999);
           fetched = true;
         }
       } catch (e) {}
     }
 
-    // 3. Fallback to saved local rates
+    // 3. Fallback to saved manual/last rates
     if (!fetched) {
       const saved = JSON.parse(localStorage.getItem("HOJ_LAST_RATES") || "null");
       if (saved && saved["22K"] > 0) {
