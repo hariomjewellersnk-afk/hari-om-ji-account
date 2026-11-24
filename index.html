@@ -63,22 +63,73 @@
   #loader { display: none; text-align: center; color: var(--gold); padding: 8px; font-size: 0.85rem; }
   #syncStatus { text-align: center; font-size: 0.75rem; color: #888; margin-bottom: 10px; padding: 6px; background: #181818; border-radius: 8px; border: 1px solid #2a2a2a; }
 
-  /* A4 Printable Invoice Layout */
+  /* In-page A4 Preview Modal (Reliable on iPhone Safari, Android Chrome & Windows) */
+  #a4PrintModal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.92);
+    z-index: 9500;
+    overflow-y: auto;
+    padding: 14px;
+  }
+  #a4PrintModal.open {
+    display: block;
+  }
+  .a4-modal-toolbar {
+    max-width: 794px;
+    margin: 0 auto 12px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+  }
+  .a4-btn-primary {
+    background: var(--gold);
+    color: #000;
+    font-weight: bold;
+    border: none;
+    padding: 11px 22px;
+    border-radius: 8px;
+    font-size: 15px;
+    cursor: pointer;
+  }
+  .a4-btn-back {
+    background: #222;
+    color: #fff;
+    font-weight: bold;
+    border: 1.5px solid var(--gold);
+    padding: 11px 20px;
+    border-radius: 8px;
+    font-size: 15px;
+    cursor: pointer;
+  }
+  #a4PrintSheet {
+    max-width: 794px;
+    margin: auto;
+  }
+
   @page { size: A4 portrait; margin: 10mm; }
-  #printArea { display: none; }
   @media print {
-    body > :not(#printArea) { display: none !important; }
-    #printArea {
+    body { margin: 0 !important; padding: 0 !important; background: #fff !important; color: #000 !important; }
+    body > header,
+    body > nav,
+    body > #loader,
+    body > #lockScreen,
+    body > .container { display: none !important; }
+    #a4PrintModal {
       display: block !important;
-      width: 190mm;
-      max-width: 100%;
-      margin: auto;
+      position: static !important;
       background: #fff !important;
-      color: #000 !important;
-      padding: 0;
-      font-family: Arial, sans-serif;
+      padding: 0 !important;
+      overflow: visible !important;
     }
-    .no-print { display: none !important; }
+    .a4-modal-toolbar { display: none !important; }
+    #a4PrintSheet {
+      width: 100% !important;
+      max-width: 190mm !important;
+      margin: 0 auto !important;
+    }
   }
 </style>
 </head>
@@ -297,8 +348,14 @@
   </div>
 </div>
 
-<!-- Universal Printable Invoice Area (A4 Print & Save as PDF) -->
-<div id="printArea"></div>
+<!-- In-Page A4 Invoice Print & PDF Modal (Works reliably on iPhone Safari, Android Chrome & Windows) -->
+<div id="a4PrintModal" role="dialog" aria-modal="true" aria-label="A4 Invoice Preview">
+  <div class="a4-modal-toolbar">
+    <button type="button" class="a4-btn-primary" onclick="triggerDirectA4Print()">🖨️ A4 Print / Save PDF</button>
+    <button type="button" class="a4-btn-back" onclick="closeA4PrintModal()">↩️ Back to Billing</button>
+  </div>
+  <div id="a4PrintSheet"></div>
+</div>
 
 <nav class="no-print">
   <button class="active" onclick="switchTab('billing', this)"><span>🧾</span>बिलिंग</button>
@@ -703,75 +760,73 @@
 
     const itemRowsHtml = itemsArr.map(it => `
       <tr>
-        <td style="border: 1px solid #000; padding: 9px;">${it.itemName}</td>
-        <td style="border: 1px solid #000; padding: 9px;">${it.purity}</td>
-        <td style="border: 1px solid #000; padding: 9px;">${it.grossWt} g</td>
-        <td style="border: 1px solid #000; padding: 9px;">${it.netWt} g</td>
-        <td style="border: 1px solid #000; padding: 9px;">₹${it.rate}</td>
-        <td style="border: 1px solid #000; padding: 9px; text-align:right;">₹${it.itemTotal}</td>
+        <td style="border: 1px solid #000; padding: 8px;">${it.itemName}</td>
+        <td style="border: 1px solid #000; padding: 8px;">${it.purity}</td>
+        <td style="border: 1px solid #000; padding: 8px;">${it.grossWt} g</td>
+        <td style="border: 1px solid #000; padding: 8px;">${it.netWt} g</td>
+        <td style="border: 1px solid #000; padding: 8px;">₹${it.rate}</td>
+        <td style="border: 1px solid #000; padding: 8px; text-align:right;">₹${it.itemTotal}</td>
       </tr>
     `).join("");
 
     return `
-      <div style="border: 2px solid #000; padding: 20px; width: 100%; max-width: 190mm; min-height: 250mm; margin: auto; background: #fff; color: #000; display: flex; flex-direction: column; justify-content: space-between;">
-        <div>
-          <div style="display: flex; align-items: center; justify-content: center; gap: 18px; border-bottom: 2px solid #000; padding-bottom: 14px;">
-            <img src="${OFFICIAL_LOGO_DATA}" style="width: 90px; height: 90px; border-radius: 12px; object-fit: contain; background: #fff;">
-            <div style="text-align: left;">
-              <h1 style="margin: 0; font-size: 26px; letter-spacing: 1px; color: #000;">HARI ॐ JEWELLERS</h1>
-              <p style="margin: 4px 0; font-size: 13.5px; color: #000;">Vani Vihar, Adhoiwala, Raipur Road, Dehradun, Uttarakhand</p>
-              <p style="margin: 2px 0; font-size: 13.5px; color: #000;"><b>Mob:</b> 9639200583 / 8630446400</p>
-              <p style="margin: 5px 0 0; font-size: 14px; font-weight: bold; text-decoration: underline;">A4 TAX INVOICE / ESTIMATE MEMO</p>
-            </div>
+      <div style="border: 2px solid #000; padding: 18px; width: 100%; margin: auto; background: #fff; color: #000;">
+        <div style="display: flex; align-items: center; justify-content: center; gap: 16px; border-bottom: 2px solid #000; padding-bottom: 12px;">
+          <img src="${OFFICIAL_LOGO_DATA}" style="width: 82px; height: 82px; border-radius: 12px; object-fit: contain; background: #fff;">
+          <div style="text-align: left;">
+            <h1 style="margin: 0; font-size: 24px; letter-spacing: 1px; color: #000;">HARI ॐ JEWELLERS</h1>
+            <p style="margin: 3px 0; font-size: 13px; color: #000;">Vani Vihar, Adhoiwala, Raipur Road, Dehradun, Uttarakhand</p>
+            <p style="margin: 2px 0; font-size: 13px; color: #000;"><b>Mob:</b> 9639200583 / 8630446400</p>
+            <p style="margin: 4px 0 0; font-size: 13.5px; font-weight: bold; text-decoration: underline;">A4 TAX INVOICE / ESTIMATE MEMO</p>
           </div>
-          <table style="width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13.5px; color: #000;">
-            <tr>
-              <td style="border:none; padding:5px;"><b>Bill No:</b> ${inv.BillNo || inv.billNo}</td>
-              <td style="border:none; padding:5px; text-align:right;"><b>Date:</b> ${String(inv.Date || inv.date).slice(0,10)}</td>
-            </tr>
-            <tr>
-              <td style="border:none; padding:5px;"><b>Customer:</b> ${inv.CustomerName || inv.customerName}</td>
-              <td style="border:none; padding:5px; text-align:right;"><b>Phone:</b> ${inv.Phone || inv.phone || "-"}</td>
-            </tr>
-          </table>
-          <table style="width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 13.5px; color: #000;">
-            <thead>
-              <tr style="background: #f0f0f0;">
-                <th style="border: 1px solid #000; padding: 9px; color:#000;">Item / Description</th>
-                <th style="border: 1px solid #000; padding: 9px; color:#000;">Purity</th>
-                <th style="border: 1px solid #000; padding: 9px; color:#000;">Gross Wt</th>
-                <th style="border: 1px solid #000; padding: 9px; color:#000;">Net Wt</th>
-                <th style="border: 1px solid #000; padding: 9px; color:#000;">Rate/g</th>
-                <th style="border: 1px solid #000; padding: 9px; color:#000; text-align:right;">Amount (₹)</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${itemRowsHtml}
-              <tr>
-                <td colspan="5" style="border: 1px solid #000; padding: 8px; text-align:right;">Total Making Charges</td>
-                <td style="border: 1px solid #000; padding: 8px; text-align:right;">₹${inv.MakingCharge || inv.makingCharge || 0}</td>
-              </tr>
-              ${discRow}
-              <tr>
-                <td colspan="5" style="border: 1px solid #000; padding: 8px; text-align:right;">GST (Included / Extra)</td>
-                <td style="border: 1px solid #000; padding: 8px; text-align:right;">₹${inv.GST || inv.gst || 0}</td>
-              </tr>
-              <tr style="font-weight: bold; font-size: 16px;">
-                <td colspan="5" style="border: 1px solid #000; padding: 10px; text-align:right;">GRAND TOTAL</td>
-                <td style="border: 1px solid #000; padding: 10px; text-align:right;">₹${inv.GrandTotal || inv.grandTotal}</td>
-              </tr>
-              <tr>
-                <td colspan="5" style="border: 1px solid #000; padding: 8px; text-align:right;">Paid (${inv.PaymentMode || inv.paymentMode || "Cash"})</td>
-                <td style="border: 1px solid #000; padding: 8px; text-align:right;">₹${inv.PaidAmount || inv.paidAmount || 0}</td>
-              </tr>
-              <tr>
-                <td colspan="5" style="border: 1px solid #000; padding: 8px; text-align:right;">Balance Due</td>
-                <td style="border: 1px solid #000; padding: 8px; text-align:right;">₹${inv.BalanceDue || inv.balanceDue || 0}</td>
-              </tr>
-            </tbody>
-          </table>
         </div>
-        <div style="margin-top: 50px; padding-top: 16px; border-top: 1px dashed #666; display: flex; justify-content: space-between; font-size: 13px;">
+        <table style="width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; color: #000;">
+          <tr>
+            <td style="border:none; padding:4px; color:#000;"><b>Bill No:</b> ${inv.BillNo || inv.billNo}</td>
+            <td style="border:none; padding:4px; text-align:right; color:#000;"><b>Date:</b> ${String(inv.Date || inv.date).slice(0,10)}</td>
+          </tr>
+          <tr>
+            <td style="border:none; padding:4px; color:#000;"><b>Customer:</b> ${inv.CustomerName || inv.customerName}</td>
+            <td style="border:none; padding:4px; text-align:right; color:#000;"><b>Phone:</b> ${inv.Phone || inv.phone || "-"}</td>
+          </tr>
+        </table>
+        <table style="width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13px; color: #000;">
+          <thead>
+            <tr style="background: #f0f0f0;">
+              <th style="border: 1px solid #000; padding: 8px; color:#000;">Item / Description</th>
+              <th style="border: 1px solid #000; padding: 8px; color:#000;">Purity</th>
+              <th style="border: 1px solid #000; padding: 8px; color:#000;">Gross Wt</th>
+              <th style="border: 1px solid #000; padding: 8px; color:#000;">Net Wt</th>
+              <th style="border: 1px solid #000; padding: 8px; color:#000;">Rate/g</th>
+              <th style="border: 1px solid #000; padding: 8px; color:#000; text-align:right;">Amount (₹)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemRowsHtml}
+            <tr>
+              <td colspan="5" style="border: 1px solid #000; padding: 7px; text-align:right;">Total Making Charges</td>
+              <td style="border: 1px solid #000; padding: 7px; text-align:right;">₹${inv.MakingCharge || inv.makingCharge || 0}</td>
+            </tr>
+            ${discRow}
+            <tr>
+              <td colspan="5" style="border: 1px solid #000; padding: 7px; text-align:right;">GST (Included / Extra)</td>
+              <td style="border: 1px solid #000; padding: 7px; text-align:right;">₹${inv.GST || inv.gst || 0}</td>
+            </tr>
+            <tr style="font-weight: bold; font-size: 15px;">
+              <td colspan="5" style="border: 1px solid #000; padding: 9px; text-align:right;">GRAND TOTAL</td>
+              <td style="border: 1px solid #000; padding: 9px; text-align:right;">₹${inv.GrandTotal || inv.grandTotal}</td>
+            </tr>
+            <tr>
+              <td colspan="5" style="border: 1px solid #000; padding: 7px; text-align:right;">Paid (${inv.PaymentMode || inv.paymentMode || "Cash"})</td>
+              <td style="border: 1px solid #000; padding: 7px; text-align:right;">₹${inv.PaidAmount || inv.paidAmount || 0}</td>
+            </tr>
+            <tr>
+              <td colspan="5" style="border: 1px solid #000; padding: 7px; text-align:right;">Balance Due</td>
+              <td style="border: 1px solid #000; padding: 7px; text-align:right;">₹${inv.BalanceDue || inv.balanceDue || 0}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="margin-top: 48px; padding-top: 14px; border-top: 1px dashed #666; display: flex; justify-content: space-between; font-size: 12.5px; color:#000;">
           <span>Customer Signature</span>
           <span>For: <b>HARI ॐ JEWELLERS</b></span>
         </div>
@@ -781,85 +836,22 @@
 
   function printInvoiceObj(inv) {
     returnToBillingTab();
-    const htmlDoc = `<!DOCTYPE html>
-<html lang="hi">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A4 Invoice - ${inv.BillNo || inv.billNo || "HOJ"}</title>
-<style>
-  @page { size: A4 portrait; margin: 10mm; }
-  * { box-sizing: border-box; }
-  body { margin: 0; padding: 12px; background: #fff; color: #000; font-family: Arial, sans-serif; }
-  .a4-sheet { width: 100%; max-width: 190mm; margin: auto; }
-  .top-action-bar {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 10px;
-    margin-bottom: 14px;
+    document.getElementById("a4PrintSheet").innerHTML = buildBrandedInvoiceHTML(inv);
+    document.getElementById("a4PrintModal").classList.add("open");
+    document.getElementById("a4PrintModal").scrollTop = 0;
   }
-  .action-btn {
-    padding: 10px 20px;
-    font-size: 15px;
-    font-weight: bold;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-  }
-  .print-action { background: #d4af37; color: #000; }
-  .back-action { background: #222; color: #fff; border: 1.5px solid #d4af37; }
-  @media print {
-    body { margin: 0; padding: 0; width: 190mm; }
-    .a4-sheet { width: 100%; max-width: 190mm; }
-    .top-action-bar { display: none !important; }
-  }
-</style>
-</head>
-<body>
-  <div class="top-action-bar">
-    <button class="action-btn print-action" onclick="window.print()">🖨️ A4 Print / Save PDF</button>
-    <button class="action-btn back-action" onclick="backToBilling()">↩️ Back to Billing</button>
-  </div>
-  <div class="a4-sheet">${buildBrandedInvoiceHTML(inv)}</div>
-  <script>
-    function backToBilling() {
-      try {
-        if (window.opener && !window.opener.closed) {
-          window.opener.focus();
-          if (typeof window.opener.returnToBillingTab === "function") {
-            window.opener.returnToBillingTab();
-          }
-        }
-      } catch (e) {}
-      window.close();
-      setTimeout(function() {
-        if (!window.closed) {
-          window.location.href = "./#billing";
-        }
-      }, 150);
-    }
-    window.onload = function() {
-      setTimeout(function() {
-        try { window.print(); } catch (e) {}
-      }, 150);
-    };
-  <\/script>
-</body>
-</html>`;
 
-    const printWin = window.open("", "_blank");
-    if (printWin && printWin.document) {
-      printWin.document.open();
-      printWin.document.write(htmlDoc);
-      printWin.document.close();
-      printWin.focus();
-      return;
+  function triggerDirectA4Print() {
+    try {
+      window.print();
+    } catch (e) {
+      alert("कृपया ब्राउज़र मेनू से Print / Save as PDF चुनें।");
     }
+  }
 
-    const area = document.getElementById("printArea");
-    area.innerHTML = `<div class="a4-sheet">${buildBrandedInvoiceHTML(inv)}</div>`;
-    window.print();
+  function closeA4PrintModal() {
+    document.getElementById("a4PrintModal").classList.remove("open");
+    returnToBillingTab();
   }
 
   function printCurrentOrLastBill() {
