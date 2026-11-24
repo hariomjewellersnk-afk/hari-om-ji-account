@@ -510,6 +510,11 @@
     if (btn) btn.classList.add("active");
   }
 
+  function returnToBillingTab() {
+    const billingBtn = document.querySelectorAll("nav button")[0];
+    switchTab("billing", billingBtn);
+  }
+
   function buildCurrentSingleItem() {
     const metal = document.getElementById("bMetal").value;
     const purity = document.getElementById("bPurity").value;
@@ -678,7 +683,6 @@
     });
   }
 
-  // Multi-item A4 Invoice HTML
   function buildBrandedInvoiceHTML(inv) {
     const discVal = parseFloat(inv.discount || inv.Discount) || 0;
     const discRow = discVal > 0 ? `
@@ -776,6 +780,7 @@
   }
 
   function printInvoiceObj(inv) {
+    returnToBillingTab();
     const htmlDoc = `<!DOCTYPE html>
 <html lang="hi">
 <head>
@@ -787,19 +792,53 @@
   * { box-sizing: border-box; }
   body { margin: 0; padding: 12px; background: #fff; color: #000; font-family: Arial, sans-serif; }
   .a4-sheet { width: 100%; max-width: 190mm; margin: auto; }
+  .top-action-bar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .action-btn {
+    padding: 10px 20px;
+    font-size: 15px;
+    font-weight: bold;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .print-action { background: #d4af37; color: #000; }
+  .back-action { background: #222; color: #fff; border: 1.5px solid #d4af37; }
   @media print {
     body { margin: 0; padding: 0; width: 190mm; }
     .a4-sheet { width: 100%; max-width: 190mm; }
-    .no-print-bar { display: none !important; }
+    .top-action-bar { display: none !important; }
   }
 </style>
 </head>
 <body>
-  <div class="no-print-bar" style="text-align:center; margin-bottom:12px;">
-    <button onclick="window.print()" style="padding:10px 22px; font-size:16px; font-weight:bold; background:#d4af37; color:#000; border:none; border-radius:8px; cursor:pointer;">🖨️ A4 Print / Save PDF</button>
+  <div class="top-action-bar">
+    <button class="action-btn print-action" onclick="window.print()">🖨️ A4 Print / Save PDF</button>
+    <button class="action-btn back-action" onclick="backToBilling()">↩️ Back to Billing</button>
   </div>
   <div class="a4-sheet">${buildBrandedInvoiceHTML(inv)}</div>
   <script>
+    function backToBilling() {
+      try {
+        if (window.opener && !window.opener.closed) {
+          window.opener.focus();
+          if (typeof window.opener.returnToBillingTab === "function") {
+            window.opener.returnToBillingTab();
+          }
+        }
+      } catch (e) {}
+      window.close();
+      setTimeout(function() {
+        if (!window.closed) {
+          window.location.href = "./#billing";
+        }
+      }, 150);
+    }
     window.onload = function() {
       setTimeout(function() {
         try { window.print(); } catch (e) {}
@@ -877,12 +916,14 @@
           text: `Hari ॐ Jewellers Invoice ${billNo} - ₹${total}`,
           files: [pdfFile]
         });
+        returnToBillingTab();
         return;
       }
     } catch (e) {
       console.log("Direct file share skipped:", e);
     }
 
+    returnToBillingTab();
     const itemLines = itemsArr.length > 0
       ? itemsArr.map((x, i) => `${i+1}. ${x.itemName} (${x.purity}) - ${x.netWt}g = ₹${x.itemTotal}`).join("%0A")
       : `*Item:* ${bill.MetalType || bill.metalType} (${netWt}g)`;
