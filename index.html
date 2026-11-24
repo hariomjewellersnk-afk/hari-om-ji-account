@@ -164,7 +164,7 @@
         <div><label>डिस्काउंट / छूट (₹)</label><input type="number" step="1" inputmode="decimal" id="bDiscount" value="0" placeholder="₹ छूट" oninput="calcBill()"></div>
         <div>
           <label>GST (%)</label>
-          <select id="bGstPct" onchange="calcBill()"><option value="3">3% (पक्का GST बिल)</option><option value="0">0% (कच्चा / एस्टीमेट)</option></select>
+          <select id="bGstPct" onchange="calcBill()"><option value="0">3% GST सहित (रेट में शामिल)</option><option value="3">+3% अतिरिक्त GST जोड़ें</option></select>
         </div>
         <div><label>कुल बिल राशि (₹)</label><input type="number" id="bTotal" readonly style="color:var(--gold); font-weight:bold; font-size:1.1rem;"></div>
         <div><label>जमा राशि (Paid ₹)</label><input type="number" step="0.01" inputmode="decimal" id="bPaid" oninput="calcBill()"></div>
@@ -335,16 +335,14 @@
     let fetched = false;
 
     try {
-      // 1. Fetch your Hari Om Jewellers Bullion App source directly
+      // 1. Fetch directly from Hari Om Jewellers Bullion App (with 3% GST included)
       const appUrl = "https://hariomjewellersnk-afk.github.io/hari-om-ji/?t=" + Date.now();
       const pageRes = await fetch(appUrl);
       const htmlText = await pageRes.text();
 
-      // Extract the exact Apps Script URL & default parameters from your Bullion App
       const scriptMatch = htmlText.match(/https:\/\/script\.google\.com\/macros\/s\/[a-zA-Z0-9_-]+\/exec/);
       let bullionCfg = {};
 
-      // Parse any hardcoded constants/defaults inside hari-om-ji HTML
       const extractNum = (regex) => {
         const m = htmlText.match(regex);
         return m ? parseFloat(m[1]) : null;
@@ -365,7 +363,6 @@
         } catch (e) {}
       }
 
-      // Check if Bullion App's Apps Script has direct saved/overridden rates
       let g24 = parseFloat(bullionCfg.gold24 || bullionCfg.rate24 || bullionCfg.g24) || 0;
       let g22 = parseFloat(bullionCfg.gold22 || bullionCfg.rate22 || bullionCfg.g22) || 0;
       let g18 = parseFloat(bullionCfg.gold18 || bullionCfg.rate18 || bullionCfg.g18) || 0;
@@ -378,7 +375,6 @@
       if (g14 > 15000) g14 = g14 / 10;
       if (s999 > 10000) s999 = s999 / 1000;
 
-      // Also check if Bullion App uses COMEX + USD/INR + Duty + Premium settings from its Admin Panel
       const comexG = parseFloat(bullionCfg.comexGold || bullionCfg.goldComex) || defComexGold;
       const comexS = parseFloat(bullionCfg.comexSilver || bullionCfg.silverComex) || defComexSil;
       const fx = parseFloat(bullionCfg.usdInr || bullionCfg.inrRate) || defUsdInr;
@@ -387,34 +383,36 @@
       const sPrem = (bullionCfg.silverPremium !== undefined) ? parseFloat(bullionCfg.silverPremium) : defSilPrem;
 
       if (g24 > 0 || g22 > 0) {
-        // Use direct rates published by Bullion App (strip 3% GST if Bullion App includes 3% GST so billing adds 3% cleanly)
         const hasGst = bullionCfg.includeGst === true || bullionCfg.gst === true || htmlText.includes("3% GST सहित");
-        const div = hasGst ? 1.03 : 1;
-        const base24 = (g24 || (g22 / 0.916)) / div;
-        liveRates["24K"] = Math.round(base24);
-        liveRates["22K"] = Math.round((g22 ? g22 / div : base24 * 0.916));
-        liveRates["18K"] = Math.round((g18 ? g18 / div : base24 * 0.750));
-        liveRates["14K"] = Math.round((g14 ? g14 / div : base24 * 0.585));
+        const mult = hasGst ? 1 : 1.03;
+        const gst24 = (g24 || (g22 / 0.916)) * mult;
+        liveRates["24K"] = Math.round(gst24);
+        liveRates["22K"] = Math.round((g22 ? g22 * mult : gst24 * 0.916));
+        liveRates["18K"] = Math.round((g18 ? g18 * mult : gst24 * 0.750));
+        liveRates["14K"] = Math.round((g14 ? g14 * mult : gst24 * 0.585));
         if (s999 > 0) {
-          const baseSil = s999 / div;
-          liveRates["Silver 999"] = +baseSil.toFixed(2);
-          liveRates["Silver 925"] = +(baseSil * 0.925).toFixed(2);
+          const gstSil = s999 * mult;
+          liveRates["Silver 999"] = +gstSil.toFixed(2);
+          liveRates["Silver 925"] = +(gstSil * 0.925).toFixed(2);
         }
         fetched = true;
       } else if (comexG > 0 && fx > 0) {
-        // Exact Bullion App formula: ((COMEX * USD_INR) / 31.1034768) * (1 + duty/100) + premium
-        // Aligned to your Bullion App's live screen ($3624.10, $42.04, ₹93.00 -> 24K ₹12,521/g pre-GST, Silver ₹135.31/g)
+        // Exact Bullion App formula WITH 3% GST included:
+        // $3624.10 @ ₹93.00 -> 24K = ₹12,897/g, 22K = ₹11,813/g, 18K = ₹9,673/g
         const base24 = (((comexG * fx) / 31.1034768) * (1 + (duty / 100))) + (gPrem / 10);
-        const aligned24 = (gPrem === 0 && duty === 6) ? (((comexG * fx) / 31.1034768) * 1.1555) : base24;
-        const baseSil = (((comexS * fx) / 31.1034768) * (1 + (duty / 100))) + (sPrem / 1000);
-        const alignedSil = (sPrem === 0 && duty === 6) ? (((comexS * fx) / 31.1034768) * 1.076) : baseSil;
+        const preGst24 = (gPrem === 0 && duty === 6) ? (((comexG * fx) / 31.1034768) * 1.1555) : base24;
+        const gst24 = preGst24 * 1.03;
 
-        liveRates["24K"] = Math.round(aligned24);
-        liveRates["22K"] = Math.round(aligned24 * 0.916);
-        liveRates["18K"] = Math.round(aligned24 * 0.750);
-        liveRates["14K"] = Math.round(aligned24 * 0.585);
-        liveRates["Silver 999"] = +alignedSil.toFixed(2);
-        liveRates["Silver 925"] = +(alignedSil * 0.925).toFixed(2);
+        const baseSil = (((comexS * fx) / 31.1034768) * (1 + (duty / 100))) + (sPrem / 1000);
+        const preGstSil = (sPrem === 0 && duty === 6) ? (((comexS * fx) / 31.1034768) * 1.076) : baseSil;
+        const gstSil = preGstSil * 1.03;
+
+        liveRates["24K"] = Math.round(gst24);
+        liveRates["22K"] = Math.round(gst24 * 0.916);
+        liveRates["18K"] = Math.round(gst24 * 0.750);
+        liveRates["14K"] = Math.round(gst24 * 0.585);
+        liveRates["Silver 999"] = +gstSil.toFixed(2);
+        liveRates["Silver 925"] = +(gstSil * 0.925).toFixed(2);
         fetched = true;
       }
 
