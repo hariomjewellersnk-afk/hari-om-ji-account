@@ -61,17 +61,13 @@
   /* Printable Invoice Overlay */
   #printArea { display: none; }
   @media print {
-    body * { visibility: hidden; }
-    #printArea, #printArea * { visibility: visible; }
+    body > :not(#printArea) { display: none !important; }
     #printArea {
       display: block !important;
-      position: absolute;
-      left: 0;
-      top: 0;
       width: 100%;
       background: #fff !important;
       color: #000 !important;
-      padding: 16px;
+      padding: 10px;
       font-family: Arial, sans-serif;
     }
     .no-print { display: none !important; }
@@ -645,9 +641,48 @@
   }
 
   function printInvoiceObj(inv) {
+    const htmlDoc = `<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Invoice - ${inv.BillNo || inv.billNo || "HOJ"}</title>
+<style>
+  body { margin: 0; padding: 16px; background: #fff; color: #000; font-family: Arial, sans-serif; }
+  @media print {
+    body { padding: 0; }
+    .no-print-bar { display: none !important; }
+  }
+</style>
+</head>
+<body>
+  <div class="no-print-bar" style="text-align:center; margin-bottom:14px;">
+    <button onclick="window.print()" style="padding:10px 22px; font-size:16px; font-weight:bold; background:#d4af37; color:#000; border:none; border-radius:8px; cursor:pointer;">🖨️ Print / Save PDF</button>
+  </div>
+  ${buildBrandedInvoiceHTML(inv)}
+  <script>
+    window.onload = function() {
+      setTimeout(function() {
+        try { window.print(); } catch (e) {}
+      }, 150);
+    };
+  <\/script>
+</body>
+</html>`;
+
+    const printWin = window.open("", "_blank");
+    if (printWin && printWin.document) {
+      printWin.document.open();
+      printWin.document.write(htmlDoc);
+      printWin.document.close();
+      printWin.focus();
+      return;
+    }
+
+    // Synchronous fallback if popup was blocked by browser
     const area = document.getElementById("printArea");
     area.innerHTML = buildBrandedInvoiceHTML(inv);
-    setTimeout(() => { window.print(); }, 200);
+    window.print();
   }
 
   function printCurrentOrLastBill() {
