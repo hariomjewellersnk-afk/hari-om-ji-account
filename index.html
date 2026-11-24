@@ -69,12 +69,12 @@
 <div id="loader">डेटा सिंक हो रहा है... कृपया प्रतीक्षा करें</div>
 
 <div class="container">
-  <!-- Live Rate Bar (Auto-fetched from Hari Om Jewellers Live Rate App) -->
+  <!-- Live Rate Bar -->
   <div class="live-ticker">
-    <span>24K: <b id="tick24">...</b></span>
-    <span>22K: <b id="tick22">...</b></span>
-    <span>18K: <b id="tick18">...</b></span>
-    <span>Silver 999: <b id="tickSil">...</b></span>
+    <span>24K: <b id="tick24">लोड हो रहा...</b></span>
+    <span>22K: <b id="tick22">लोड हो रहा...</b></span>
+    <span>18K: <b id="tick18">लोड हो रहा...</b></span>
+    <span>Silver 999: <b id="tickSil">लोड हो रहा...</b></span>
     <button class="btn btn-sm" onclick="fetchLiveBullionRates(true)">रेट रिफ्रेश</button>
   </div>
 
@@ -223,7 +223,6 @@
   const ADMIN_PIN = "1981";
   let lastBill = null;
 
-  // Per-gram live rates store
   let liveRates = {
     "24K": 0,
     "22K": 0,
@@ -250,81 +249,108 @@
     document.getElementById("bNo").value = "HOJ-" + Math.floor(1000 + Math.random() * 9000);
   }
 
-  // Fetch live rates directly from Hari Om Jewellers live rate app + COMEX/FX fallback
+  function setRatesFromSpot(g24PerGram, s999PerGram) {
+    liveRates["24K"] = Math.round(g24PerGram);
+    liveRates["22K"] = Math.round(g24PerGram * 0.916);
+    liveRates["18K"] = Math.round(g24PerGram * 0.750);
+    liveRates["14K"] = Math.round(g24PerGram * 0.585);
+    liveRates["Silver 999"] = +s999PerGram.toFixed(2);
+    liveRates["Silver 925"] = +(s999PerGram * 0.925).toFixed(2);
+  }
+
   async function fetchLiveBullionRates(autoFill = false) {
+    document.getElementById("tick24").innerText = "...";
+    document.getElementById("tick22").innerText = "...";
+    document.getElementById("tick18").innerText = "...";
+    document.getElementById("tickSil").innerText = "...";
+
+    let fetched = false;
+
+    // Source 1: Try Hari Om Jewellers Live Rate App's Apps Script
     try {
-      // 1. Try reading any saved config/rates from your live rate app HTML or script
       const pageRes = await fetch(LIVE_RATE_PAGE_URL + "?t=" + Date.now());
       const htmlText = await pageRes.text();
-
-      // Extract any embedded Apps Script URL from hari-om-ji if present
       const scriptMatch = htmlText.match(/https:\/\/script\.google\.com\/macros\/s\/[a-zA-Z0-9_-]+\/exec/);
-      let rateConfig = null;
       if (scriptMatch) {
-        try {
-          const rRes = await fetch(scriptMatch[0]);
-          const rJson = await rRes.json();
-          if (rJson && (rJson.rates || rJson.gold24 || rJson.data)) {
-            rateConfig = rJson.rates || rJson.data || rJson;
+        const rRes = await fetch(scriptMatch[0]);
+        const rJson = await rRes.json();
+        const cfg = rJson.rates || rJson.data || rJson;
+        if (cfg && (cfg.gold22 || cfg.rate22 || cfg.gold24 || cfg.rate24)) {
+          const g24 = parseFloat(cfg.gold24 || cfg.rate24) || 0;
+          const g22 = parseFloat(cfg.gold22 || cfg.rate22) || Math.round(g24 * 0.916);
+          const g18 = parseFloat(cfg.gold18 || cfg.rate18) || Math.round(g24 * 0.750);
+          const g14 = parseFloat(cfg.gold14 || cfg.rate14) || Math.round(g24 * 0.585);
+          const s999 = parseFloat(cfg.silver999 || cfg.silver) || 0;
+          if (g24 > 0 || g22 > 0) {
+            liveRates["24K"] = g24 > 25000 ? +(g24 / 10).toFixed(2) : g24;
+            liveRates["22K"] = g22 > 22000 ? +(g22 / 10).toFixed(2) : g22;
+            liveRates["18K"] = g18 > 18000 ? +(g18 / 10).toFixed(2) : g18;
+            liveRates["14K"] = g14 > 14000 ? +(g14 / 10).toFixed(2) : g14;
+            liveRates["Silver 999"] = s999 > 5000 ? +(s999 / 1000).toFixed(2) : s999;
+            liveRates["Silver 925"] = +(liveRates["Silver 999"] * 0.925).toFixed(2);
+            fetched = true;
           }
-        } catch (e) {}
-      }
-
-      if (rateConfig && (rateConfig.gold22 || rateConfig.rate22)) {
-        const g24 = parseFloat(rateConfig.gold24 || rateConfig.rate24) || 0;
-        const g22 = parseFloat(rateConfig.gold22 || rateConfig.rate22) || Math.round(g24 * 0.916);
-        const g18 = parseFloat(rateConfig.gold18 || rateConfig.rate18) || Math.round(g24 * 0.750);
-        const g14 = parseFloat(rateConfig.gold14 || rateConfig.rate14) || Math.round(g24 * 0.585);
-        const s999 = parseFloat(rateConfig.silver999 || rateConfig.silver) || 0;
-
-        // Normalize to per-gram if stored per 10g / 1kg
-        liveRates["24K"] = g24 > 25000 ? +(g24 / 10).toFixed(2) : g24;
-        liveRates["22K"] = g22 > 22000 ? +(g22 / 10).toFixed(2) : g22;
-        liveRates["18K"] = g18 > 18000 ? +(g18 / 10).toFixed(2) : g18;
-        liveRates["14K"] = g14 > 14000 ? +(g14 / 10).toFixed(2) : g14;
-        liveRates["Silver 999"] = s999 > 5000 ? +(s999 / 1000).toFixed(2) : s999;
-        liveRates["Silver 925"] = +(liveRates["Silver 999"] * 0.925).toFixed(2);
-      } else {
-        // 2. Live COMEX Spot + USD/INR calculation (same formula as your bullion calculator)
-        const [goldRes, silRes, fxRes] = await Promise.all([
-          fetch("https://data-asg.goldprice.org/dbXRates/INR").then(r => r.json()).catch(() => null),
-          fetch("https://api.frankfurter.app/latest?from=USD&to=INR").then(r => r.json()).catch(() => null)
-        ]);
-
-        if (goldRes && goldRes.items && goldRes.items[0]) {
-          const item = goldRes.items[0];
-          // Convert Troy Oz (31.1034768g) + 6% Indian import duty & local bullion premium
-          const g24PerGram = (item.xauPrice / 31.1034768) * 1.06;
-          const s999PerGram = (item.xagPrice / 31.1034768) * 1.06;
-
-          liveRates["24K"] = Math.round(g24PerGram);
-          liveRates["22K"] = Math.round(g24PerGram * 0.916);
-          liveRates["18K"] = Math.round(g24PerGram * 0.750);
-          liveRates["14K"] = Math.round(g24PerGram * 0.585);
-          liveRates["Silver 999"] = +s999PerGram.toFixed(2);
-          liveRates["Silver 925"] = +(s999PerGram * 0.925).toFixed(2);
         }
       }
+    } catch (e) {}
 
-      document.getElementById("tick24").innerText = liveRates["24K"] ? `₹${liveRates["24K"]}/g` : "N/A";
-      document.getElementById("tick22").innerText = liveRates["22K"] ? `₹${liveRates["22K"]}/g` : "N/A";
-      document.getElementById("tick18").innerText = liveRates["18K"] ? `₹${liveRates["18K"]}/g` : "N/A";
-      document.getElementById("tickSil").innerText = liveRates["Silver 999"] ? `₹${liveRates["Silver 999"]}/g` : "N/A";
-
-      if (autoFill) applyLiveRateToBill();
-    } catch (err) {
-      console.error("Rate fetch error:", err);
+    // Source 2: Goldprice.org INR Spot API
+    if (!fetched) {
+      try {
+        const res = await fetch("https://data-asg.goldprice.org/dbXRates/INR");
+        const data = await res.json();
+        if (data && data.items && data.items[0] && data.items[0].xauPrice) {
+          const g24 = (data.items[0].xauPrice / 31.1034768) * 1.06;
+          const s999 = (data.items[0].xagPrice / 31.1034768) * 1.06;
+          setRatesFromSpot(g24, s999);
+          fetched = true;
+        }
+      } catch (e) {}
     }
+
+    // Source 3: Gold-API (COMEX XAU/XAG in USD) + Frankfurter USD/INR (CORS-free reliable fallback)
+    if (!fetched) {
+      try {
+        const [xauRes, xagRes, fxRes] = await Promise.all([
+          fetch("https://api.gold-api.com/price/XAU").then(r => r.json()),
+          fetch("https://api.gold-api.com/price/XAG").then(r => r.json()),
+          fetch("https://api.frankfurter.app/latest?from=USD&to=INR").then(r => r.json())
+        ]);
+        const usdInr = (fxRes && fxRes.rates && fxRes.rates.INR) ? fxRes.rates.INR : 84.5;
+        if (xauRes && xauRes.price) {
+          const g24 = ((xauRes.price * usdInr) / 31.1034768) * 1.06;
+          const s999 = xagRes && xagRes.price ? ((xagRes.price * usdInr) / 31.1034768) * 1.06 : 95;
+          setRatesFromSpot(g24, s999);
+          fetched = true;
+        }
+      } catch (e) {}
+    }
+
+    // Source 4: Coinbase Exchange Rates Fallback (CORS-free)
+    if (!fetched) {
+      try {
+        const cb = await fetch("https://api.coinbase.com/v2/exchange-rates?currency=INR").then(r => r.json());
+        if (cb && cb.data && cb.data.rates && cb.data.rates.XAU) {
+          const xauInr = 1 / parseFloat(cb.data.rates.XAU);
+          const xagInr = cb.data.rates.XAG ? (1 / parseFloat(cb.data.rates.XAG)) : (92 * 31.1034768);
+          setRatesFromSpot((xauInr / 31.1034768) * 1.06, (xagInr / 31.1034768) * 1.06);
+          fetched = true;
+        }
+      } catch (e) {}
+    }
+
+    document.getElementById("tick24").innerText = liveRates["24K"] ? `₹${liveRates["24K"]}/g` : "ऑफलाइन";
+    document.getElementById("tick22").innerText = liveRates["22K"] ? `₹${liveRates["22K"]}/g` : "ऑफलाइन";
+    document.getElementById("tick18").innerText = liveRates["18K"] ? `₹${liveRates["18K"]}/g` : "ऑफलाइन";
+    document.getElementById("tickSil").innerText = liveRates["Silver 999"] ? `₹${liveRates["Silver 999"]}/g` : "ऑफलाइन";
+
+    if (autoFill && fetched) applyLiveRateToBill();
   }
 
   function onMetalChange() {
     const metal = document.getElementById("bMetal").value;
     const purityEl = document.getElementById("bPurity");
-    if (metal === "Silver") {
-      purityEl.value = "Silver 999";
-    } else {
-      purityEl.value = "22K";
-    }
+    purityEl.value = (metal === "Silver") ? "Silver 999" : "22K";
     applyLiveRateToBill();
   }
 
