@@ -37,7 +37,9 @@
   
   .btn { background: var(--gold); color: #000; font-weight: bold; border: none; padding: 12px; border-radius: 8px; width: 100%; font-size: 1rem; cursor: pointer; margin-top: 10px; }
   .btn-wa { background: #25D366; color: #fff; margin-top: 8px; }
+  .btn-print { background: #3498db; color: #fff; margin-top: 8px; }
   .btn-sm { padding: 5px 10px; font-size: 0.75rem; width: auto; margin-top: 0; }
+  .btn-xs { padding: 4px 8px; font-size: 0.72rem; width: auto; margin-top: 0; background: #333; color: var(--gold); border: 1px solid var(--gold); }
 
   table { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin-top: 10px; }
   th, td { padding: 8px 6px; border-bottom: 1px solid #333; text-align: left; }
@@ -50,6 +52,26 @@
   nav button.active { color: var(--gold); font-weight: bold; }
   nav button span { font-size: 1.2rem; margin-bottom: 2px; }
   #loader { display: none; text-align: center; color: var(--gold); padding: 8px; font-size: 0.85rem; }
+  #syncStatus { text-align: center; font-size: 0.72rem; color: #888; margin-bottom: 8px; }
+
+  /* Printable Invoice Overlay (Works on iPhone, Android, Windows) */
+  #printArea { display: none; }
+  @media print {
+    body * { visibility: hidden; }
+    #printArea, #printArea * { visibility: visible; }
+    #printArea {
+      display: block !important;
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      background: #fff !important;
+      color: #000 !important;
+      padding: 16px;
+      font-family: Arial, sans-serif;
+    }
+    .no-print { display: none !important; }
+  }
 </style>
 </head>
 <body>
@@ -71,10 +93,10 @@
 <div class="container">
   <!-- Live Rate Bar -->
   <div class="live-ticker">
-    <span>24K: <b id="tick24">लोड हो रहा...</b></span>
-    <span>22K: <b id="tick22">लोड हो रहा...</b></span>
-    <span>18K: <b id="tick18">लोड हो रहा...</b></span>
-    <span>Silver 999: <b id="tickSil">लोड हो रहा...</b></span>
+    <span>24K: <b id="tick24">...</b></span>
+    <span>22K: <b id="tick22">...</b></span>
+    <span>18K: <b id="tick18">...</b></span>
+    <span>Silver 999: <b id="tickSil">...</b></span>
     <button class="btn btn-sm" onclick="fetchLiveBullionRates(true)">रेट रिफ्रेश</button>
   </div>
 
@@ -85,6 +107,7 @@
     <div class="stat-card"><small>बाज़ार उधार (लेना है)</small><strong id="statUdhaar" style="color:#e74c3c;">₹0</strong></div>
     <div class="stat-card"><small>कैश / रोकड़ बैलेंस</small><strong id="statCash" style="color:#2ecc71;">₹0</strong></div>
   </div>
+  <div id="syncStatus">शीट स्थिति: जांच हो रही है...</div>
 
   <!-- 1. BILLING SECTION -->
   <div id="sec-billing" class="section active">
@@ -130,12 +153,15 @@
         </div>
       </div>
       <button class="btn" onclick="saveInvoice()">बिल सेव करें</button>
-      <button class="btn btn-wa" id="waReceiptBtn" style="display:none;" onclick="sendWhatsAppBill()">WhatsApp पर रसीद भेजें</button>
+      <div class="form-grid" style="margin-top:4px;">
+        <button class="btn btn-print" onclick="printCurrentOrLastBill()">🖨️ प्रिंट / PDF बिल</button>
+        <button class="btn btn-wa" onclick="sendWhatsAppBill()">📲 WhatsApp रसीद</button>
+      </div>
     </div>
 
     <div class="card">
       <h3>हाल के बिल (Recent Invoices)</h3>
-      <div class="table-wrap"><table id="tblInvoices"><thead><tr><th>बिल#</th><th>ग्राहक</th><th>वज़न</th><th>कुल ₹</th><th>बकाया</th></tr></thead><tbody></tbody></table></div>
+      <div class="table-wrap"><table id="tblInvoices"><thead><tr><th>बिल#</th><th>ग्राहक</th><th>वज़न</th><th>कुल ₹</th><th>प्रिंट</th></tr></thead><tbody></tbody></table></div>
     </div>
   </div>
 
@@ -209,7 +235,10 @@
   </div>
 </div>
 
-<nav>
+<!-- Universal Printable Invoice Area (iPhone, Android & Windows Compatible) -->
+<div id="printArea"></div>
+
+<nav class="no-print">
   <button class="active" onclick="switchTab('billing', this)"><span>🧾</span>बिलिंग</button>
   <button onclick="switchTab('ledger', this)"><span>📒</span>खाता/उधार</button>
   <button onclick="switchTab('stock', this)"><span>⚖️</span>स्टॉक</button>
@@ -219,7 +248,6 @@
 
 <script>
   const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxMHK0HBrhf1QJJCnKe8ds7aJCuAJLTdtS2OZYPvKxb0xTgOLvVvSjkz3gybRwyu4fq/exec";
-  const LIVE_RATE_PAGE_URL = "https://hariomjewellersnk-afk.github.io/hari-om-ji/";
   const ADMIN_PIN = "1981";
   let lastBill = null;
 
@@ -232,10 +260,13 @@
     "Silver 925": 0
   };
 
+  let appData = JSON.parse(localStorage.getItem("HOJ_CACHE_DATA") || '{"invoices":[],"ledger":[],"stock":[],"daybook":[]}');
+
   function unlockApp() {
     if (document.getElementById("pinInput").value === ADMIN_PIN) {
       document.getElementById("lockScreen").style.display = "none";
       initDates();
+      renderDashboard(appData);
       fetchLiveBullionRates(true);
       loadAllData();
     } else {
@@ -256,6 +287,7 @@
     liveRates["14K"] = Math.round(g24PerGram * 0.585);
     liveRates["Silver 999"] = +s999PerGram.toFixed(2);
     liveRates["Silver 925"] = +(s999PerGram * 0.925).toFixed(2);
+    localStorage.setItem("HOJ_LAST_RATES", JSON.stringify(liveRates));
   }
 
   async function fetchLiveBullionRates(autoFill = false) {
@@ -266,49 +298,31 @@
 
     let fetched = false;
 
-    // Source 1: Try Hari Om Jewellers Live Rate App's Apps Script
-    try {
-      const pageRes = await fetch(LIVE_RATE_PAGE_URL + "?t=" + Date.now());
-      const htmlText = await pageRes.text();
-      const scriptMatch = htmlText.match(/https:\/\/script\.google\.com\/macros\/s\/[a-zA-Z0-9_-]+\/exec/);
-      if (scriptMatch) {
-        const rRes = await fetch(scriptMatch[0]);
-        const rJson = await rRes.json();
-        const cfg = rJson.rates || rJson.data || rJson;
-        if (cfg && (cfg.gold22 || cfg.rate22 || cfg.gold24 || cfg.rate24)) {
-          const g24 = parseFloat(cfg.gold24 || cfg.rate24) || 0;
-          const g22 = parseFloat(cfg.gold22 || cfg.rate22) || Math.round(g24 * 0.916);
-          const g18 = parseFloat(cfg.gold18 || cfg.rate18) || Math.round(g24 * 0.750);
-          const g14 = parseFloat(cfg.gold14 || cfg.rate14) || Math.round(g24 * 0.585);
-          const s999 = parseFloat(cfg.silver999 || cfg.silver) || 0;
-          if (g24 > 0 || g22 > 0) {
-            liveRates["24K"] = g24 > 25000 ? +(g24 / 10).toFixed(2) : g24;
-            liveRates["22K"] = g22 > 22000 ? +(g22 / 10).toFixed(2) : g22;
-            liveRates["18K"] = g18 > 18000 ? +(g18 / 10).toFixed(2) : g18;
-            liveRates["14K"] = g14 > 14000 ? +(g14 / 10).toFixed(2) : g14;
-            liveRates["Silver 999"] = s999 > 5000 ? +(s999 / 1000).toFixed(2) : s999;
-            liveRates["Silver 925"] = +(liveRates["Silver 999"] * 0.925).toFixed(2);
-            fetched = true;
-          }
-        }
-      }
-    } catch (e) {}
-
-    // Source 2: Goldprice.org INR Spot API
     if (!fetched) {
       try {
-        const res = await fetch("https://data-asg.goldprice.org/dbXRates/INR");
-        const data = await res.json();
-        if (data && data.items && data.items[0] && data.items[0].xauPrice) {
-          const g24 = (data.items[0].xauPrice / 31.1034768) * 1.06;
-          const s999 = (data.items[0].xagPrice / 31.1034768) * 1.06;
+        const proxy = "https://api.allorigins.win/get?url=";
+        const [gRes, sRes, fxRes] = await Promise.all([
+          fetch(proxy + encodeURIComponent("https://query1.finance.yahoo.com/v8/finance/chart/GC=F?interval=1d&range=1d")).then(r => r.json()),
+          fetch(proxy + encodeURIComponent("https://query1.finance.yahoo.com/v8/finance/chart/SI=F?interval=1d&range=1d")).then(r => r.json()),
+          fetch(proxy + encodeURIComponent("https://query1.finance.yahoo.com/v8/finance/chart/INR=X?interval=1d&range=1d")).then(r => r.json())
+        ]);
+        const gData = JSON.parse(gRes.contents);
+        const sData = JSON.parse(sRes.contents);
+        const fxData = JSON.parse(fxRes.contents);
+
+        const xauUsd = gData.chart.result[0].meta.regularMarketPrice;
+        const xagUsd = sData.chart.result[0].meta.regularMarketPrice;
+        const usdInr = fxData.chart.result[0].meta.regularMarketPrice;
+
+        if (xauUsd && usdInr) {
+          const g24 = ((xauUsd * usdInr) / 31.1034768) * 1.06;
+          const s999 = ((xagUsd * usdInr) / 31.1034768) * 1.06;
           setRatesFromSpot(g24, s999);
           fetched = true;
         }
       } catch (e) {}
     }
 
-    // Source 3: Gold-API (COMEX XAU/XAG in USD) + Frankfurter USD/INR (CORS-free reliable fallback)
     if (!fetched) {
       try {
         const [xauRes, xagRes, fxRes] = await Promise.all([
@@ -326,31 +340,25 @@
       } catch (e) {}
     }
 
-    // Source 4: Coinbase Exchange Rates Fallback (CORS-free)
     if (!fetched) {
-      try {
-        const cb = await fetch("https://api.coinbase.com/v2/exchange-rates?currency=INR").then(r => r.json());
-        if (cb && cb.data && cb.data.rates && cb.data.rates.XAU) {
-          const xauInr = 1 / parseFloat(cb.data.rates.XAU);
-          const xagInr = cb.data.rates.XAG ? (1 / parseFloat(cb.data.rates.XAG)) : (92 * 31.1034768);
-          setRatesFromSpot((xauInr / 31.1034768) * 1.06, (xagInr / 31.1034768) * 1.06);
-          fetched = true;
-        }
-      } catch (e) {}
+      const saved = JSON.parse(localStorage.getItem("HOJ_LAST_RATES") || "null");
+      if (saved && saved["22K"] > 0) {
+        liveRates = saved;
+        fetched = true;
+      }
     }
 
-    document.getElementById("tick24").innerText = liveRates["24K"] ? `₹${liveRates["24K"]}/g` : "ऑफलाइन";
-    document.getElementById("tick22").innerText = liveRates["22K"] ? `₹${liveRates["22K"]}/g` : "ऑफलाइन";
-    document.getElementById("tick18").innerText = liveRates["18K"] ? `₹${liveRates["18K"]}/g` : "ऑफलाइन";
-    document.getElementById("tickSil").innerText = liveRates["Silver 999"] ? `₹${liveRates["Silver 999"]}/g` : "ऑफलाइन";
+    document.getElementById("tick24").innerText = liveRates["24K"] ? `₹${liveRates["24K"]}/g` : "रेट डालें";
+    document.getElementById("tick22").innerText = liveRates["22K"] ? `₹${liveRates["22K"]}/g` : "रेट डालें";
+    document.getElementById("tick18").innerText = liveRates["18K"] ? `₹${liveRates["18K"]}/g` : "रेट डालें";
+    document.getElementById("tickSil").innerText = liveRates["Silver 999"] ? `₹${liveRates["Silver 999"]}/g` : "रेट डालें";
 
     if (autoFill && fetched) applyLiveRateToBill();
   }
 
   function onMetalChange() {
     const metal = document.getElementById("bMetal").value;
-    const purityEl = document.getElementById("bPurity");
-    purityEl.value = (metal === "Silver") ? "Silver 999" : "22K";
+    document.getElementById("bPurity").value = (metal === "Silver") ? "Silver 999" : "22K";
     applyLiveRateToBill();
   }
 
@@ -384,17 +392,185 @@
     document.getElementById("bDue").value = Math.max(0, total - paid);
   }
 
+  function getFormBillData() {
+    const net = parseFloat(document.getElementById("bNet").value) || 0;
+    const rate = parseFloat(document.getElementById("bRate").value) || 0;
+    const making = parseFloat(document.getElementById("bMaking").value) || 0;
+    const gstPct = parseFloat(document.getElementById("bGstPct").value) || 0;
+    const gstAmt = Math.round(((net * rate) + making) * (gstPct / 100));
+
+    return {
+      billNo: document.getElementById("bNo").value,
+      date: document.getElementById("bDate").value,
+      customerName: document.getElementById("bName").value || "Cash Customer",
+      phone: document.getElementById("bPhone").value || "-",
+      metalType: document.getElementById("bMetal").value,
+      purity: document.getElementById("bPurity").value,
+      grossWt: document.getElementById("bGross").value || net,
+      netWt: net,
+      rate: rate,
+      makingCharge: making,
+      gst: gstAmt,
+      grandTotal: document.getElementById("bTotal").value || 0,
+      paidAmount: document.getElementById("bPaid").value || 0,
+      balanceDue: document.getElementById("bDue").value || 0,
+      paymentMode: document.getElementById("bMode").value
+    };
+  }
+
+  // Universal Print Function (iPhone AirPrint, Android Print Service, Windows Ctrl+P)
+  function printInvoiceObj(inv) {
+    const area = document.getElementById("printArea");
+    area.innerHTML = `
+      <div style="border: 2px solid #000; padding: 18px; max-width: 720px; margin: auto;">
+        <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px;">
+          <h1 style="margin: 0; font-size: 24px; letter-spacing: 1px;">HARI ॐ JEWELLERS</h1>
+          <p style="margin: 4px 0; font-size: 13px;">Vani Vihar, Adhoiwala, Raipur Road, Dehradun, Uttarakhand</p>
+          <p style="margin: 2px 0; font-size: 13px;"><b>Mob:</b> 9639200583 / 8630446400</p>
+          <p style="margin: 6px 0 0; font-size: 14px; font-weight: bold; text-decoration: underline;">TAX INVOICE / ESTIMATE MEMO</p>
+        </div>
+        <table style="width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; color: #000;">
+          <tr>
+            <td style="border:none; padding:4px;"><b>Bill No:</b> ${inv.BillNo || inv.billNo}</td>
+            <td style="border:none; padding:4px; text-align:right;"><b>Date:</b> ${String(inv.Date || inv.date).slice(0,10)}</td>
+          </tr>
+          <tr>
+            <td style="border:none; padding:4px;"><b>Customer:</b> ${inv.CustomerName || inv.customerName}</td>
+            <td style="border:none; padding:4px; text-align:right;"><b>Phone:</b> ${inv.Phone || inv.phone || "-"}</td>
+          </tr>
+        </table>
+        <table style="width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13px; color: #000;">
+          <thead>
+            <tr style="background: #f0f0f0;">
+              <th style="border: 1px solid #000; padding: 8px; color:#000;">Description</th>
+              <th style="border: 1px solid #000; padding: 8px; color:#000;">Purity</th>
+              <th style="border: 1px solid #000; padding: 8px; color:#000;">Gross Wt</th>
+              <th style="border: 1px solid #000; padding: 8px; color:#000;">Net Wt</th>
+              <th style="border: 1px solid #000; padding: 8px; color:#000;">Rate/g</th>
+              <th style="border: 1px solid #000; padding: 8px; color:#000; text-align:right;">Amount (₹)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="border: 1px solid #000; padding: 8px;">${inv.MetalType || inv.metalType} Jewellery</td>
+              <td style="border: 1px solid #000; padding: 8px;">${inv.Purity || inv.purity}</td>
+              <td style="border: 1px solid #000; padding: 8px;">${inv.GrossWt || inv.grossWt} g</td>
+              <td style="border: 1px solid #000; padding: 8px;">${inv.NetWt || inv.netWt} g</td>
+              <td style="border: 1px solid #000; padding: 8px;">₹${inv.Rate || inv.rate}</td>
+              <td style="border: 1px solid #000; padding: 8px; text-align:right;">₹${Math.round((inv.NetWt || inv.netWt) * (inv.Rate || inv.rate))}</td>
+            </tr>
+            <tr>
+              <td colspan="5" style="border: 1px solid #000; padding: 6px; text-align:right;">Making Charges</td>
+              <td style="border: 1px solid #000; padding: 6px; text-align:right;">₹${inv.MakingCharge || inv.makingCharge || 0}</td>
+            </tr>
+            <tr>
+              <td colspan="5" style="border: 1px solid #000; padding: 6px; text-align:right;">GST</td>
+              <td style="border: 1px solid #000; padding: 6px; text-align:right;">₹${inv.GST || inv.gst || 0}</td>
+            </tr>
+            <tr style="font-weight: bold; font-size: 15px;">
+              <td colspan="5" style="border: 1px solid #000; padding: 8px; text-align:right;">GRAND TOTAL</td>
+              <td style="border: 1px solid #000; padding: 8px; text-align:right;">₹${inv.GrandTotal || inv.grandTotal}</td>
+            </tr>
+            <tr>
+              <td colspan="5" style="border: 1px solid #000; padding: 6px; text-align:right;">Paid (${inv.PaymentMode || inv.paymentMode || "Cash"})</td>
+              <td style="border: 1px solid #000; padding: 6px; text-align:right;">₹${inv.PaidAmount || inv.paidAmount || 0}</td>
+            </tr>
+            <tr>
+              <td colspan="5" style="border: 1px solid #000; padding: 6px; text-align:right;">Balance Due</td>
+              <td style="border: 1px solid #000; padding: 6px; text-align:right;">₹${inv.BalanceDue || inv.balanceDue || 0}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="margin-top: 35px; display: flex; justify-content: space-between; font-size: 12px;">
+          <span>Customer Signature</span>
+          <span>For: <b>HARI ॐ JEWELLERS</b></span>
+        </div>
+      </div>
+    `;
+    setTimeout(() => { window.print(); }, 200);
+  }
+
+  function printCurrentOrLastBill() {
+    const net = parseFloat(document.getElementById("bNet").value) || 0;
+    if (net > 0) {
+      printInvoiceObj(getFormBillData());
+    } else if (lastBill) {
+      printInvoiceObj(lastBill);
+    } else if (appData.invoices && appData.invoices.length > 0) {
+      printInvoiceObj(appData.invoices[appData.invoices.length - 1]);
+    } else {
+      alert("प्रिंट करने के लिए पहले बिल का वज़न और रेट भरें!");
+    }
+  }
+
+  function printOldBill(idx) {
+    const rev = (appData.invoices || []).slice(-15).reverse();
+    if (rev[idx]) printInvoiceObj(rev[idx]);
+  }
+
   async function postToSheet(action, payload) {
+    if (action === "addInvoice") {
+      appData.invoices.push({
+        BillNo: payload.billNo, Date: payload.date, CustomerName: payload.customerName, Phone: payload.phone,
+        MetalType: payload.metalType, Purity: payload.purity, GrossWt: payload.grossWt, NetWt: payload.netWt,
+        Rate: payload.rate, MakingCharge: payload.makingCharge, GST: payload.gst,
+        GrandTotal: payload.grandTotal, PaidAmount: payload.paidAmount, BalanceDue: payload.balanceDue, PaymentMode: payload.paymentMode
+      });
+      appData.stock.push({
+        Date: payload.date, Metal: payload.metalType, Action: "OUT",
+        Weight_g: payload.netWt, Remarks: "Sold Bill #" + payload.billNo
+      });
+      if (Number(payload.paidAmount) > 0) {
+        appData.daybook.push({
+          Date: payload.date, Description: "Bill #" + payload.billNo,
+          Credit_In: payload.paidAmount, Debit_Out: 0
+        });
+      }
+      if (Number(payload.balanceDue) > 0) {
+        appData.ledger.push({
+          PartyName: payload.customerName, Type: "Customer",
+          CashIn: 0, CashOut: payload.balanceDue, Notes: "Bill #" + payload.billNo
+        });
+      }
+    } else if (action === "addStock") {
+      appData.stock.push({
+        Date: payload.date, Metal: payload.metal, Action: payload.action,
+        Weight_g: payload.weight, Remarks: payload.remarks
+      });
+    } else if (action === "addLedger") {
+      appData.ledger.push({
+        PartyName: payload.partyName, Type: payload.type,
+        CashIn: payload.cashIn, CashOut: payload.cashOut, Notes: payload.notes
+      });
+      if (Number(payload.cashIn) > 0 || Number(payload.cashOut) > 0) {
+        appData.daybook.push({
+          Date: payload.date, Description: payload.partyName,
+          Credit_In: payload.cashIn, Debit_Out: payload.cashOut
+        });
+      }
+    } else if (action === "addDayBook") {
+      appData.daybook.push({
+        Date: payload.date, Description: payload.description,
+        Credit_In: payload.creditIn, Debit_Out: payload.debitOut
+      });
+    }
+
+    localStorage.setItem("HOJ_CACHE_DATA", JSON.stringify(appData));
+    renderDashboard(appData);
+
     document.getElementById("loader").style.display = "block";
     try {
       await fetch(SCRIPT_URL, {
         method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({ action, payload })
       });
-      await loadAllData();
-      alert("सफलतापूर्वक सेव हो गया!");
+      document.getElementById("syncStatus").innerText = "शीट स्थिति: सेव हो गया (" + new Date().toLocaleTimeString() + ")";
+      setTimeout(loadAllData, 1500);
+      alert("बिल/डेटा सेव हो गया! अब आप प्रिंट या WhatsApp कर सकते हैं।");
     } catch (e) {
-      alert("नेटवर्क त्रुटि: " + e.message);
+      alert("ऑफलाइन सेव हुआ: " + e.message);
     }
     document.getElementById("loader").style.display = "none";
   }
@@ -402,16 +578,26 @@
   async function loadAllData() {
     document.getElementById("loader").style.display = "block";
     try {
-      const res = await fetch(SCRIPT_URL);
-      const json = await res.json();
-      if (json.status === "success") renderDashboard(json.data);
-    } catch (e) { console.error(e); }
+      const res = await fetch(SCRIPT_URL + "?t=" + Date.now(), { redirect: "follow" });
+      const text = await res.text();
+      if (text.trim().startsWith("{")) {
+        const json = JSON.parse(text);
+        if (json.status === "success" && json.data) {
+          appData = json.data;
+          localStorage.setItem("HOJ_CACHE_DATA", JSON.stringify(appData));
+          renderDashboard(appData);
+          document.getElementById("syncStatus").innerText = "शीट स्थिति: लाइव सिंक (" + new Date().toLocaleTimeString() + ")";
+        }
+      }
+    } catch (e) {
+      document.getElementById("syncStatus").innerText = "शीट स्थिति: लोकल डेटा सक्रिय";
+    }
     document.getElementById("loader").style.display = "none";
   }
 
   function renderDashboard(data) {
     let gold = 0, silver = 0;
-    data.stock.forEach(s => {
+    (data.stock || []).forEach(s => {
       const w = parseFloat(s.Weight_g) || 0;
       if (s.Metal === "Gold") gold += (s.Action === "IN" ? w : -w);
       if (s.Metal === "Silver") silver += (s.Action === "IN" ? w : -w);
@@ -420,69 +606,47 @@
     document.getElementById("statSilver").innerText = silver.toFixed(3) + " g";
 
     let udhaar = 0;
-    data.ledger.forEach(l => {
+    (data.ledger || []).forEach(l => {
       udhaar += (parseFloat(l.CashOut) || 0) - (parseFloat(l.CashIn) || 0);
     });
     document.getElementById("statUdhaar").innerText = "₹" + Math.round(udhaar).toLocaleString("en-IN");
 
     let cash = 0;
-    data.daybook.forEach(d => {
+    (data.daybook || []).forEach(d => {
       cash += (parseFloat(d.Credit_In) || 0) - (parseFloat(d.Debit_Out) || 0);
     });
     document.getElementById("statCash").innerText = "₹" + Math.round(cash).toLocaleString("en-IN");
 
-    document.querySelector("#tblInvoices tbody").innerHTML = data.invoices.slice(-15).reverse().map(i =>
-      `<tr><td>${i.BillNo}</td><td>${i.CustomerName}</td><td>${i.NetWt}g</td><td>₹${i.GrandTotal}</td><td style="color:#e74c3c;">₹${i.BalanceDue}</td></tr>`
+    document.querySelector("#tblInvoices tbody").innerHTML = (data.invoices || []).slice(-15).reverse().map((i, idx) =>
+      `<tr><td>${i.BillNo}</td><td>${i.CustomerName}</td><td>${i.NetWt}g</td><td>₹${i.GrandTotal}</td><td><button class="btn btn-xs" onclick="printOldBill(${idx})">🖨️</button></td></tr>`
     ).join("");
 
-    document.querySelector("#tblLedger tbody").innerHTML = data.ledger.slice(-15).reverse().map(l =>
+    document.querySelector("#tblLedger tbody").innerHTML = (data.ledger || []).slice(-15).reverse().map(l =>
       `<tr><td>${l.PartyName}</td><td>${l.Type}</td><td style="color:#2ecc71;">₹${l.CashIn}</td><td style="color:#e74c3c;">₹${l.CashOut}</td><td>${l.Notes}</td></tr>`
     ).join("");
 
-    document.querySelector("#tblStock tbody").innerHTML = data.stock.slice(-15).reverse().map(s =>
+    document.querySelector("#tblStock tbody").innerHTML = (data.stock || []).slice(-15).reverse().map(s =>
       `<tr><td>${String(s.Date).slice(0,10)}</td><td>${s.Metal}</td><td>${s.Action}</td><td>${s.Weight_g}g</td><td>${s.Remarks}</td></tr>`
     ).join("");
 
-    document.querySelector("#tblDayBook tbody").innerHTML = data.daybook.slice(-15).reverse().map(d =>
+    document.querySelector("#tblDayBook tbody").innerHTML = (data.daybook || []).slice(-15).reverse().map(d =>
       `<tr><td>${String(d.Date).slice(0,10)}</td><td>${d.Description}</td><td style="color:#2ecc71;">₹${d.Credit_In}</td><td style="color:#e74c3c;">₹${d.Debit_Out}</td></tr>`
     ).join("");
   }
 
   function saveInvoice() {
-    const net = parseFloat(document.getElementById("bNet").value) || 0;
-    const rate = parseFloat(document.getElementById("bRate").value) || 0;
-    const making = parseFloat(document.getElementById("bMaking").value) || 0;
-    const gstPct = parseFloat(document.getElementById("bGstPct").value) || 0;
-    const gstAmt = Math.round(((net * rate) + making) * (gstPct / 100));
-
-    const payload = {
-      billNo: document.getElementById("bNo").value,
-      date: document.getElementById("bDate").value,
-      customerName: document.getElementById("bName").value || "Cash Customer",
-      phone: document.getElementById("bPhone").value,
-      metalType: document.getElementById("bMetal").value,
-      purity: document.getElementById("bPurity").value,
-      grossWt: document.getElementById("bGross").value || net,
-      netWt: net,
-      rate: rate,
-      makingCharge: making,
-      gst: gstAmt,
-      grandTotal: document.getElementById("bTotal").value,
-      paidAmount: document.getElementById("bPaid").value || 0,
-      balanceDue: document.getElementById("bDue").value || 0,
-      paymentMode: document.getElementById("bMode").value
-    };
+    const payload = getFormBillData();
     lastBill = payload;
-    document.getElementById("waReceiptBtn").style.display = "block";
     postToSheet("addInvoice", payload);
     initDates();
   }
 
   function sendWhatsAppBill() {
-    if (!lastBill || !lastBill.phone) return alert("ग्राहक का मोबाइल नंबर दर्ज करें!");
-    let ph = lastBill.phone.replace(/\D/g, "");
+    const bill = (parseFloat(document.getElementById("bNet").value) > 0) ? getFormBillData() : lastBill;
+    if (!bill || !bill.phone || bill.phone === "-") return alert("ग्राहक का मोबाइल नंबर दर्ज करें!");
+    let ph = bill.phone.replace(/\D/g, "");
     if (ph.length === 10) ph = "91" + ph;
-    const msg = `*HARI ॐ JEWELLERS*%0AVani Vihar, Adhoiwala, Raipur Road, Dehradun%0APh: 9639200583%0A------------------------%0A*Bill No:* ${lastBill.billNo}%0A*Date:* ${lastBill.date}%0A*Customer:* ${lastBill.customerName}%0A*Item:* ${lastBill.metalType} (${lastBill.purity})%0A*Net Wt:* ${lastBill.netWt} g%0A*Rate:* ₹${lastBill.rate}/g%0A*Making:* ₹${lastBill.makingCharge}%0A*GST:* ₹${lastBill.gst}%0A*Total Amount:* ₹${lastBill.grandTotal}%0A*Paid:* ₹${lastBill.paidAmount}%0A*Balance Due:* ₹${lastBill.balanceDue}%0A------------------------%0Aधन्यवाद! फिर पधारें।`;
+    const msg = `*HARI ॐ JEWELLERS*%0AVani Vihar, Adhoiwala, Raipur Road, Dehradun%0APh: 9639200583%0A------------------------%0A*Bill No:* ${bill.billNo}%0A*Date:* ${bill.date}%0A*Customer:* ${bill.customerName}%0A*Item:* ${bill.metalType} (${bill.purity})%0A*Net Wt:* ${bill.netWt} g%0A*Rate:* ₹${bill.rate}/g%0A*Making:* ₹${bill.makingCharge}%0A*GST:* ₹${bill.gst}%0A*Total Amount:* ₹${bill.grandTotal}%0A*Paid:* ₹${bill.paidAmount}%0A*Balance Due:* ₹${bill.balanceDue}%0A------------------------%0Aधन्यवाद! फिर पधारें।`;
     window.open(`https://wa.me/${ph}?text=${msg}`, "_blank");
   }
 
