@@ -17,6 +17,8 @@
   #lockScreen input { font-size: 1.5rem; text-align: center; letter-spacing: 8px; padding: 12px; width: 200px; border-radius: 10px; border: 2px solid var(--gold); background: #000; color: #fff; margin: 15px 0; }
   
   .container { max-width: 900px; margin: auto; padding: 12px; }
+  .live-ticker { background: #1c1808; border: 1px solid #4d3e10; border-radius: 10px; padding: 8px 12px; margin-bottom: 12px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; font-size: 0.78rem; gap: 6px; }
+  .live-ticker span b { color: var(--gold); }
   .grid-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 15px; }
   @media(min-width: 600px) { .grid-stats { grid-template-columns: repeat(4, 1fr); } }
   .stat-card { background: var(--card); border: 1px solid #333; border-radius: 10px; padding: 12px; text-align: center; }
@@ -35,7 +37,7 @@
   
   .btn { background: var(--gold); color: #000; font-weight: bold; border: none; padding: 12px; border-radius: 8px; width: 100%; font-size: 1rem; cursor: pointer; margin-top: 10px; }
   .btn-wa { background: #25D366; color: #fff; margin-top: 8px; }
-  .btn-sm { padding: 6px 10px; font-size: 0.8rem; width: auto; }
+  .btn-sm { padding: 5px 10px; font-size: 0.75rem; width: auto; margin-top: 0; }
 
   table { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin-top: 10px; }
   th, td { padding: 8px 6px; border-bottom: 1px solid #333; text-align: left; }
@@ -67,6 +69,15 @@
 <div id="loader">डेटा सिंक हो रहा है... कृपया प्रतीक्षा करें</div>
 
 <div class="container">
+  <!-- Live Rate Bar (Auto-fetched from Hari Om Jewellers Live Rate App) -->
+  <div class="live-ticker">
+    <span>24K: <b id="tick24">...</b></span>
+    <span>22K: <b id="tick22">...</b></span>
+    <span>18K: <b id="tick18">...</b></span>
+    <span>Silver 999: <b id="tickSil">...</b></span>
+    <button class="btn btn-sm" onclick="fetchLiveBullionRates(true)">रेट रिफ्रेश</button>
+  </div>
+
   <!-- Live Dashboard Summary -->
   <div class="grid-stats">
     <div class="stat-card"><small>नेट गोल्ड स्टॉक</small><strong id="statGold">0.000 g</strong></div>
@@ -86,15 +97,25 @@
         <div><label>मोबाइल नंबर (WhatsApp)</label><input type="tel" id="bPhone" inputmode="tel" placeholder="98XXXXXXXX"></div>
         <div>
           <label>धातु (Metal)</label>
-          <select id="bMetal" onchange="calcBill()"><option value="Gold">सोना (Gold)</option><option value="Silver">चांदी (Silver)</option></select>
+          <select id="bMetal" onchange="onMetalChange()">
+            <option value="Gold">सोना (Gold)</option>
+            <option value="Silver">चांदी (Silver)</option>
+          </select>
         </div>
         <div>
           <label>शुद्धता (Purity)</label>
-          <select id="bPurity"><option>22K (916)</option><option>24K (999)</option><option>18K (750)</option><option>14K (585)</option><option>Silver 999</option><option>Silver 925</option></select>
+          <select id="bPurity" onchange="applyLiveRateToBill()">
+            <option value="22K">22K (916)</option>
+            <option value="24K">24K (999)</option>
+            <option value="18K">18K (750)</option>
+            <option value="14K">14K (585)</option>
+            <option value="Silver 999">Silver 999</option>
+            <option value="Silver 925">Silver 925</option>
+          </select>
         </div>
         <div><label>ग्रॉस वज़न (ग्राम)</label><input type="number" step="0.001" inputmode="decimal" id="bGross" oninput="calcBill()"></div>
         <div><label>नेट वज़न (ग्राम)</label><input type="number" step="0.001" inputmode="decimal" id="bNet" oninput="calcBill()"></div>
-        <div><label>रेट (₹ प्रति ग्राम)</label><input type="number" step="0.01" inputmode="decimal" id="bRate" oninput="calcBill()"></div>
+        <div><label>लाइव रेट (₹ प्रति ग्राम)</label><input type="number" step="0.01" inputmode="decimal" id="bRate" oninput="calcBill()"></div>
         <div><label>कुल मेकिंग चार्ज (₹)</label><input type="number" step="0.01" inputmode="decimal" id="bMaking" value="0" oninput="calcBill()"></div>
         <div>
           <label>GST (%)</label>
@@ -198,13 +219,25 @@
 
 <script>
   const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxMHK0HBrhf1QJJCnKe8ds7aJCuAJLTdtS2OZYPvKxb0xTgOLvVvSjkz3gybRwyu4fq/exec";
+  const LIVE_RATE_PAGE_URL = "https://hariomjewellersnk-afk.github.io/hari-om-ji/";
   const ADMIN_PIN = "1981";
   let lastBill = null;
+
+  // Per-gram live rates store
+  let liveRates = {
+    "24K": 0,
+    "22K": 0,
+    "18K": 0,
+    "14K": 0,
+    "Silver 999": 0,
+    "Silver 925": 0
+  };
 
   function unlockApp() {
     if (document.getElementById("pinInput").value === ADMIN_PIN) {
       document.getElementById("lockScreen").style.display = "none";
       initDates();
+      fetchLiveBullionRates(true);
       loadAllData();
     } else {
       alert("गलत PIN! कृपया सही PIN डालें।");
@@ -215,6 +248,92 @@
     const today = new Date().toISOString().split("T")[0];
     ["bDate", "lDate", "sDate", "dDate"].forEach(id => document.getElementById(id).value = today);
     document.getElementById("bNo").value = "HOJ-" + Math.floor(1000 + Math.random() * 9000);
+  }
+
+  // Fetch live rates directly from Hari Om Jewellers live rate app + COMEX/FX fallback
+  async function fetchLiveBullionRates(autoFill = false) {
+    try {
+      // 1. Try reading any saved config/rates from your live rate app HTML or script
+      const pageRes = await fetch(LIVE_RATE_PAGE_URL + "?t=" + Date.now());
+      const htmlText = await pageRes.text();
+
+      // Extract any embedded Apps Script URL from hari-om-ji if present
+      const scriptMatch = htmlText.match(/https:\/\/script\.google\.com\/macros\/s\/[a-zA-Z0-9_-]+\/exec/);
+      let rateConfig = null;
+      if (scriptMatch) {
+        try {
+          const rRes = await fetch(scriptMatch[0]);
+          const rJson = await rRes.json();
+          if (rJson && (rJson.rates || rJson.gold24 || rJson.data)) {
+            rateConfig = rJson.rates || rJson.data || rJson;
+          }
+        } catch (e) {}
+      }
+
+      if (rateConfig && (rateConfig.gold22 || rateConfig.rate22)) {
+        const g24 = parseFloat(rateConfig.gold24 || rateConfig.rate24) || 0;
+        const g22 = parseFloat(rateConfig.gold22 || rateConfig.rate22) || Math.round(g24 * 0.916);
+        const g18 = parseFloat(rateConfig.gold18 || rateConfig.rate18) || Math.round(g24 * 0.750);
+        const g14 = parseFloat(rateConfig.gold14 || rateConfig.rate14) || Math.round(g24 * 0.585);
+        const s999 = parseFloat(rateConfig.silver999 || rateConfig.silver) || 0;
+
+        // Normalize to per-gram if stored per 10g / 1kg
+        liveRates["24K"] = g24 > 25000 ? +(g24 / 10).toFixed(2) : g24;
+        liveRates["22K"] = g22 > 22000 ? +(g22 / 10).toFixed(2) : g22;
+        liveRates["18K"] = g18 > 18000 ? +(g18 / 10).toFixed(2) : g18;
+        liveRates["14K"] = g14 > 14000 ? +(g14 / 10).toFixed(2) : g14;
+        liveRates["Silver 999"] = s999 > 5000 ? +(s999 / 1000).toFixed(2) : s999;
+        liveRates["Silver 925"] = +(liveRates["Silver 999"] * 0.925).toFixed(2);
+      } else {
+        // 2. Live COMEX Spot + USD/INR calculation (same formula as your bullion calculator)
+        const [goldRes, silRes, fxRes] = await Promise.all([
+          fetch("https://data-asg.goldprice.org/dbXRates/INR").then(r => r.json()).catch(() => null),
+          fetch("https://api.frankfurter.app/latest?from=USD&to=INR").then(r => r.json()).catch(() => null)
+        ]);
+
+        if (goldRes && goldRes.items && goldRes.items[0]) {
+          const item = goldRes.items[0];
+          // Convert Troy Oz (31.1034768g) + 6% Indian import duty & local bullion premium
+          const g24PerGram = (item.xauPrice / 31.1034768) * 1.06;
+          const s999PerGram = (item.xagPrice / 31.1034768) * 1.06;
+
+          liveRates["24K"] = Math.round(g24PerGram);
+          liveRates["22K"] = Math.round(g24PerGram * 0.916);
+          liveRates["18K"] = Math.round(g24PerGram * 0.750);
+          liveRates["14K"] = Math.round(g24PerGram * 0.585);
+          liveRates["Silver 999"] = +s999PerGram.toFixed(2);
+          liveRates["Silver 925"] = +(s999PerGram * 0.925).toFixed(2);
+        }
+      }
+
+      document.getElementById("tick24").innerText = liveRates["24K"] ? `₹${liveRates["24K"]}/g` : "N/A";
+      document.getElementById("tick22").innerText = liveRates["22K"] ? `₹${liveRates["22K"]}/g` : "N/A";
+      document.getElementById("tick18").innerText = liveRates["18K"] ? `₹${liveRates["18K"]}/g` : "N/A";
+      document.getElementById("tickSil").innerText = liveRates["Silver 999"] ? `₹${liveRates["Silver 999"]}/g` : "N/A";
+
+      if (autoFill) applyLiveRateToBill();
+    } catch (err) {
+      console.error("Rate fetch error:", err);
+    }
+  }
+
+  function onMetalChange() {
+    const metal = document.getElementById("bMetal").value;
+    const purityEl = document.getElementById("bPurity");
+    if (metal === "Silver") {
+      purityEl.value = "Silver 999";
+    } else {
+      purityEl.value = "22K";
+    }
+    applyLiveRateToBill();
+  }
+
+  function applyLiveRateToBill() {
+    const purity = document.getElementById("bPurity").value;
+    if (liveRates[purity] && liveRates[purity] > 0) {
+      document.getElementById("bRate").value = liveRates[purity];
+      calcBill();
+    }
   }
 
   function switchTab(tab, btn) {
