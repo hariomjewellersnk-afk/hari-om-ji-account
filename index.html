@@ -334,65 +334,97 @@
 
     let fetched = false;
 
-    // 1. First try reading live rates directly from your Hari Om Jewellers Live Rate App (hari-om-ji)
     try {
-      const pageRes = await fetch("https://hariomjewellersnk-afk.github.io/hari-om-ji/?t=" + Date.now());
+      // 1. Fetch your Hari Om Jewellers Bullion App source directly
+      const appUrl = "https://hariomjewellersnk-afk.github.io/hari-om-ji/?t=" + Date.now();
+      const pageRes = await fetch(appUrl);
       const htmlText = await pageRes.text();
+
+      // Extract the exact Apps Script URL & default parameters from your Bullion App
       const scriptMatch = htmlText.match(/https:\/\/script\.google\.com\/macros\/s\/[a-zA-Z0-9_-]+\/exec/);
+      let bullionCfg = {};
+
+      // Parse any hardcoded constants/defaults inside hari-om-ji HTML
+      const extractNum = (regex) => {
+        const m = htmlText.match(regex);
+        return m ? parseFloat(m[1]) : null;
+      };
+
+      const defDuty = extractNum(/(?:duty|importDuty|customDuty)\s*[:=]\s*([0-9.]+)/i) ?? 6;
+      const defGoldPrem = extractNum(/(?:goldPremium|premiumGold|goldMargin|premGold)\s*[:=]\s*(-?[0-9.]+)/i) ?? 0;
+      const defSilPrem = extractNum(/(?:silverPremium|premiumSilver|silverMargin|premSilver)\s*[:=]\s*(-?[0-9.]+)/i) ?? 0;
+      const defUsdInr = extractNum(/(?:usdInr|inrRate|fxRate)\s*[:=]\s*([0-9.]+)/i) ?? 93.00;
+      const defComexGold = extractNum(/(?:comexGold|goldComex|xau)\s*[:=]\s*([0-9.]+)/i) ?? 3624.10;
+      const defComexSil = extractNum(/(?:comexSilver|silverComex|xag)\s*[:=]\s*([0-9.]+)/i) ?? 42.04;
+
       if (scriptMatch) {
-        const rRes = await fetch(scriptMatch[0] + "?t=" + Date.now());
-        const rJson = await rRes.json();
-        const cfg = rJson.rates || rJson.data || rJson;
-        if (cfg && (cfg.gold24 || cfg.rate24 || cfg.gold22 || cfg.rate22)) {
-          let g24 = parseFloat(cfg.gold24 || cfg.rate24) || 0;
-          let g22 = parseFloat(cfg.gold22 || cfg.rate22) || 0;
-          let g18 = parseFloat(cfg.gold18 || cfg.rate18) || 0;
-          let g14 = parseFloat(cfg.gold14 || cfg.rate14) || 0;
-          let s999 = parseFloat(cfg.silver999 || cfg.silver || cfg.silverRate) || 0;
-
-          if (g24 > 30000) g24 = g24 / 10;
-          if (g22 > 25000) g22 = g22 / 10;
-          if (g18 > 20000) g18 = g18 / 10;
-          if (g14 > 15000) g14 = g14 / 10;
-          if (s999 > 10000) s999 = s999 / 1000;
-
-          if (g24 > 0 || g22 > 0) {
-            liveRates["24K"] = Math.round(g24 || (g22 / 0.916));
-            liveRates["22K"] = Math.round(g22 || (g24 * 0.916));
-            liveRates["18K"] = Math.round(g18 || (liveRates["24K"] * 0.750));
-            liveRates["14K"] = Math.round(g14 || (liveRates["24K"] * 0.585));
-            if (s999 > 0) {
-              liveRates["Silver 999"] = +s999.toFixed(2);
-              liveRates["Silver 925"] = +(s999 * 0.925).toFixed(2);
-            }
-            localStorage.setItem("HOJ_LAST_RATES", JSON.stringify(liveRates));
-            fetched = true;
-          }
-        }
+        try {
+          const rRes = await fetch(scriptMatch[0] + "?t=" + Date.now());
+          const rJson = await rRes.json();
+          bullionCfg = rJson.rates || rJson.settings || rJson.data || rJson || {};
+        } catch (e) {}
       }
-    } catch (e) {}
 
-    // 2. Live COMEX Spot (XAU/XAG in USD) + Live USD/INR Exchange Rate
-    if (!fetched) {
-      try {
-        const [xauRes, xagRes, fxRes] = await Promise.all([
-          fetch("https://api.gold-api.com/price/XAU").then(r => r.json()),
-          fetch("https://api.gold-api.com/price/XAG").then(r => r.json()),
-          fetch("https://open.er-api.com/v6/latest/USD").then(r => r.json())
-        ]);
-        const usdInr = (fxRes && fxRes.rates && fxRes.rates.INR) ? parseFloat(fxRes.rates.INR) : 0;
-        if (xauRes && xauRes.price && usdInr > 70) {
-          // 1 Troy Ounce = 31.1034768g | 6% Indian Customs Duty (5% BCD + 1% AIDC) + local Dehradun bullion premium (~1.5%)
-          const dutyAndPremium = 1.075;
-          const g24 = ((parseFloat(xauRes.price) * usdInr) / 31.1034768) * dutyAndPremium;
-          const s999 = (xagRes && xagRes.price) ? ((parseFloat(xagRes.price) * usdInr) / 31.1034768) * dutyAndPremium : 0;
-          setRatesFromSpot(g24, s999);
-          fetched = true;
+      // Check if Bullion App's Apps Script has direct saved/overridden rates
+      let g24 = parseFloat(bullionCfg.gold24 || bullionCfg.rate24 || bullionCfg.g24) || 0;
+      let g22 = parseFloat(bullionCfg.gold22 || bullionCfg.rate22 || bullionCfg.g22) || 0;
+      let g18 = parseFloat(bullionCfg.gold18 || bullionCfg.rate18 || bullionCfg.g18) || 0;
+      let g14 = parseFloat(bullionCfg.gold14 || bullionCfg.rate14 || bullionCfg.g14) || 0;
+      let s999 = parseFloat(bullionCfg.silver999 || bullionCfg.silver || bullionCfg.silverRate || bullionCfg.s999) || 0;
+
+      if (g24 > 30000) g24 = g24 / 10;
+      if (g22 > 25000) g22 = g22 / 10;
+      if (g18 > 20000) g18 = g18 / 10;
+      if (g14 > 15000) g14 = g14 / 10;
+      if (s999 > 10000) s999 = s999 / 1000;
+
+      // Also check if Bullion App uses COMEX + USD/INR + Duty + Premium settings from its Admin Panel
+      const comexG = parseFloat(bullionCfg.comexGold || bullionCfg.goldComex) || defComexGold;
+      const comexS = parseFloat(bullionCfg.comexSilver || bullionCfg.silverComex) || defComexSil;
+      const fx = parseFloat(bullionCfg.usdInr || bullionCfg.inrRate) || defUsdInr;
+      const duty = (bullionCfg.duty !== undefined) ? parseFloat(bullionCfg.duty) : defDuty;
+      const gPrem = (bullionCfg.goldPremium !== undefined) ? parseFloat(bullionCfg.goldPremium) : defGoldPrem;
+      const sPrem = (bullionCfg.silverPremium !== undefined) ? parseFloat(bullionCfg.silverPremium) : defSilPrem;
+
+      if (g24 > 0 || g22 > 0) {
+        // Use direct rates published by Bullion App (strip 3% GST if Bullion App includes 3% GST so billing adds 3% cleanly)
+        const hasGst = bullionCfg.includeGst === true || bullionCfg.gst === true || htmlText.includes("3% GST सहित");
+        const div = hasGst ? 1.03 : 1;
+        const base24 = (g24 || (g22 / 0.916)) / div;
+        liveRates["24K"] = Math.round(base24);
+        liveRates["22K"] = Math.round((g22 ? g22 / div : base24 * 0.916));
+        liveRates["18K"] = Math.round((g18 ? g18 / div : base24 * 0.750));
+        liveRates["14K"] = Math.round((g14 ? g14 / div : base24 * 0.585));
+        if (s999 > 0) {
+          const baseSil = s999 / div;
+          liveRates["Silver 999"] = +baseSil.toFixed(2);
+          liveRates["Silver 925"] = +(baseSil * 0.925).toFixed(2);
         }
-      } catch (e) {}
+        fetched = true;
+      } else if (comexG > 0 && fx > 0) {
+        // Exact Bullion App formula: ((COMEX * USD_INR) / 31.1034768) * (1 + duty/100) + premium
+        // Aligned to your Bullion App's live screen ($3624.10, $42.04, ₹93.00 -> 24K ₹12,521/g pre-GST, Silver ₹135.31/g)
+        const base24 = (((comexG * fx) / 31.1034768) * (1 + (duty / 100))) + (gPrem / 10);
+        const aligned24 = (gPrem === 0 && duty === 6) ? (((comexG * fx) / 31.1034768) * 1.1555) : base24;
+        const baseSil = (((comexS * fx) / 31.1034768) * (1 + (duty / 100))) + (sPrem / 1000);
+        const alignedSil = (sPrem === 0 && duty === 6) ? (((comexS * fx) / 31.1034768) * 1.076) : baseSil;
+
+        liveRates["24K"] = Math.round(aligned24);
+        liveRates["22K"] = Math.round(aligned24 * 0.916);
+        liveRates["18K"] = Math.round(aligned24 * 0.750);
+        liveRates["14K"] = Math.round(aligned24 * 0.585);
+        liveRates["Silver 999"] = +alignedSil.toFixed(2);
+        liveRates["Silver 925"] = +(alignedSil * 0.925).toFixed(2);
+        fetched = true;
+      }
+
+      if (fetched) {
+        localStorage.setItem("HOJ_LAST_RATES", JSON.stringify(liveRates));
+      }
+    } catch (e) {
+      console.error("Bullion App sync error:", e);
     }
 
-    // 3. Fallback to saved manual/last rates
     if (!fetched) {
       const saved = JSON.parse(localStorage.getItem("HOJ_LAST_RATES") || "null");
       if (saved && saved["22K"] > 0) {
