@@ -21,9 +21,10 @@
   .live-ticker span b { color: var(--gold); }
   .grid-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 15px; }
   @media(min-width: 600px) { .grid-stats { grid-template-columns: repeat(4, 1fr); } }
-  .stat-card { background: var(--card); border: 1px solid #333; border-radius: 10px; padding: 12px; text-align: center; }
+  .stat-card { background: var(--card); border: 1px solid #333; border-radius: 10px; padding: 12px; text-align: center; cursor: pointer; position: relative; }
   .stat-card small { color: #aaa; font-size: 0.75rem; display: block; }
   .stat-card strong { font-size: 1.15rem; color: var(--gold); display: block; margin-top: 4px; }
+  .stat-card .edit-hint { font-size: 0.65rem; color: #888; margin-top: 2px; display: block; }
 
   .section { display: none; }
   .section.active { display: block; }
@@ -97,15 +98,34 @@
     <span>22K: <b id="tick22">...</b></span>
     <span>18K: <b id="tick18">...</b></span>
     <span>Silver 999: <b id="tickSil">...</b></span>
-    <button class="btn btn-sm" onclick="fetchLiveBullionRates(true)">रेट रिफ्रेश</button>
+    <div style="display:flex; gap:5px;">
+      <button class="btn btn-sm" onclick="fetchLiveBullionRates(true)">🔄 रेट रिफ्रेश</button>
+      <button class="btn btn-sm" style="background:#333; color:var(--gold); border:1px solid var(--gold);" onclick="manualRateOverride()">✏️ रेट सेट</button>
+    </div>
   </div>
 
-  <!-- Live Dashboard Summary -->
+  <!-- Live Dashboard Summary (Tap Stock Cards to Edit Directly) -->
   <div class="grid-stats">
-    <div class="stat-card"><small>नेट गोल्ड स्टॉक</small><strong id="statGold">0.000 g</strong></div>
-    <div class="stat-card"><small>नेट सिल्वर स्टॉक</small><strong id="statSilver">0.000 g</strong></div>
-    <div class="stat-card"><small>बाज़ार उधार (लेना है)</small><strong id="statUdhaar" style="color:#e74c3c;">₹0</strong></div>
-    <div class="stat-card"><small>कैश / रोकड़ बैलेंस</small><strong id="statCash" style="color:#2ecc71;">₹0</strong></div>
+    <div class="stat-card" onclick="quickEditStock('Gold')" title="स्टॉक बदलने के लिए टैप करें">
+      <small>नेट गोल्ड स्टॉक</small>
+      <strong id="statGold">0.000 g</strong>
+      <span class="edit-hint">✏️ टैप करके बदलें</span>
+    </div>
+    <div class="stat-card" onclick="quickEditStock('Silver')" title="स्टॉक बदलने के लिए टैप करें">
+      <small>नेट सिल्वर स्टॉक</small>
+      <strong id="statSilver">0.000 g</strong>
+      <span class="edit-hint">✏️ टैप करके बदलें</span>
+    </div>
+    <div class="stat-card" onclick="switchTab('ledger', document.querySelectorAll('nav button')[1])">
+      <small>बाज़ार उधार (लेना है)</small>
+      <strong id="statUdhaar" style="color:#e74c3c;">₹0</strong>
+      <span class="edit-hint">खाता देखें</span>
+    </div>
+    <div class="stat-card" onclick="switchTab('daybook', document.querySelectorAll('nav button')[3])">
+      <small>कैश / रोकड़ बैलेंस</small>
+      <strong id="statCash" style="color:#2ecc71;">₹0</strong>
+      <span class="edit-hint">रोकड़ देखें</span>
+    </div>
   </div>
   <div id="syncStatus">शीट स्थिति: जांच हो रही है...</div>
 
@@ -141,11 +161,12 @@
         <div><label>लाइव रेट (₹ प्रति ग्राम)</label><input type="number" step="0.01" inputmode="decimal" id="bRate" oninput="calcBill()"></div>
         <div><label>मेकिंग चार्ज (%)</label><input type="number" step="0.1" inputmode="decimal" id="bMakingPct" placeholder="जैसे: 10 या 12" oninput="calcBill()"></div>
         <div><label>मेकिंग राशि (₹ ऑटो)</label><input type="number" id="bMakingAmt" readonly style="color:#bbb;"></div>
+        <div><label>डिस्काउंट / छूट (₹)</label><input type="number" step="1" inputmode="decimal" id="bDiscount" value="0" placeholder="₹ छूट" oninput="calcBill()"></div>
         <div>
           <label>GST (%)</label>
           <select id="bGstPct" onchange="calcBill()"><option value="3">3% (पक्का GST बिल)</option><option value="0">0% (कच्चा / एस्टीमेट)</option></select>
         </div>
-        <div class="full"><label>कुल बिल राशि (₹)</label><input type="number" id="bTotal" readonly style="color:var(--gold); font-weight:bold; font-size:1.15rem;"></div>
+        <div><label>कुल बिल राशि (₹)</label><input type="number" id="bTotal" readonly style="color:var(--gold); font-weight:bold; font-size:1.1rem;"></div>
         <div><label>जमा राशि (Paid ₹)</label><input type="number" step="0.01" inputmode="decimal" id="bPaid" oninput="calcBill()"></div>
         <div><label>बकाया उधार (Due ₹)</label><input type="number" id="bDue" readonly style="color:#e74c3c;"></div>
         <div class="full">
@@ -196,14 +217,21 @@
   <!-- 3. STOCK SECTION -->
   <div id="sec-stock" class="section">
     <div class="card">
-      <h3>सोना-चांदी स्टॉक एंट्री</h3>
+      <h3>सोना-चांदी स्टॉक एंट्री / डायरेक्ट बैलेंस सेट</h3>
       <div class="form-grid">
         <div><label>तारीख</label><input type="date" id="sDate"></div>
         <div><label>धातु</label><select id="sMetal"><option value="Gold">सोना (Gold)</option><option value="Silver">चांदी (Silver)</option></select></div>
-        <div><label>प्योरिटी</label><select id="sPurity"><option>24K (999)</option><option>22K (916)</option><option>18K (750)</option><option>Silver 999</option><option>Silver 925</option></select></div>
-        <div><label>एंट्री प्रकार</label><select id="sAction"><option value="IN">स्टॉक आया (IN +)</option><option value="OUT">स्टॉक निकला (OUT -)</option></select></div>
-        <div><label>वज़न (ग्राम)</label><input type="number" step="0.001" inputmode="decimal" id="sWeight"></div>
-        <div><label>विवरण (खरीद / कारीगर)</label><input type="text" id="sRemarks" placeholder="जैसे: बुलियन खरीद"></div>
+        <div><label>प्योरिटी</label><select id="sPurity"><option>22K (916)</option><option>24K (999)</option><option>18K (750)</option><option>Silver 999</option><option>Silver 925</option></select></div>
+        <div>
+          <label>एंट्री प्रकार</label>
+          <select id="sAction">
+            <option value="IN">स्टॉक आया (IN +)</option>
+            <option value="OUT">स्टॉक निकला (OUT -)</option>
+            <option value="SET">कुल स्टॉक सेट करें (Exact Balance)</option>
+          </select>
+        </div>
+        <div><label>वज़न (ग्राम)</label><input type="number" step="0.001" inputmode="decimal" id="sWeight" placeholder="0.000"></div>
+        <div><label>विवरण (खरीद / स्टॉक सुधार)</label><input type="text" id="sRemarks" placeholder="जैसे: ओपनिंग स्टॉक / बुलियन खरीद"></div>
       </div>
       <button class="btn" onclick="saveStock()">स्टॉक अपडेट करें</button>
     </div>
@@ -291,6 +319,13 @@
     localStorage.setItem("HOJ_LAST_RATES", JSON.stringify(liveRates));
   }
 
+  function updateRateTickerUI() {
+    document.getElementById("tick24").innerText = liveRates["24K"] ? `₹${liveRates["24K"]}/g` : "रेट सेट करें";
+    document.getElementById("tick22").innerText = liveRates["22K"] ? `₹${liveRates["22K"]}/g` : "रेट सेट करें";
+    document.getElementById("tick18").innerText = liveRates["18K"] ? `₹${liveRates["18K"]}/g` : "रेट सेट करें";
+    document.getElementById("tickSil").innerText = liveRates["Silver 999"] ? `₹${liveRates["Silver 999"]}/g` : "रेट सेट करें";
+  }
+
   async function fetchLiveBullionRates(autoFill = false) {
     document.getElementById("tick24").innerText = "...";
     document.getElementById("tick22").innerText = "...";
@@ -299,48 +334,36 @@
 
     let fetched = false;
 
+    // 1. Direct CORS-enabled Gold-API (fast & works natively on iOS Safari)
+    try {
+      const [xauRes, xagRes, fxRes] = await Promise.all([
+        fetch("https://api.gold-api.com/price/XAU").then(r => r.json()),
+        fetch("https://api.gold-api.com/price/XAG").then(r => r.json()),
+        fetch("https://open.er-api.com/v6/latest/USD").then(r => r.json())
+      ]);
+      const usdInr = (fxRes && fxRes.rates && fxRes.rates.INR) ? fxRes.rates.INR : 84.5;
+      if (xauRes && xauRes.price) {
+        const g24 = ((xauRes.price * usdInr) / 31.1034768) * 1.06;
+        const s999 = (xagRes && xagRes.price) ? ((xagRes.price * usdInr) / 31.1034768) * 1.06 : 95;
+        setRatesFromSpot(g24, s999);
+        fetched = true;
+      }
+    } catch (e) {}
+
+    // 2. Coinbase Exchange Rates API (CORS-free reliable backup)
     if (!fetched) {
       try {
-        const proxy = "https://api.allorigins.win/get?url=";
-        const [gRes, sRes, fxRes] = await Promise.all([
-          fetch(proxy + encodeURIComponent("https://query1.finance.yahoo.com/v8/finance/chart/GC=F?interval=1d&range=1d")).then(r => r.json()),
-          fetch(proxy + encodeURIComponent("https://query1.finance.yahoo.com/v8/finance/chart/SI=F?interval=1d&range=1d")).then(r => r.json()),
-          fetch(proxy + encodeURIComponent("https://query1.finance.yahoo.com/v8/finance/chart/INR=X?interval=1d&range=1d")).then(r => r.json())
-        ]);
-        const gData = JSON.parse(gRes.contents);
-        const sData = JSON.parse(sRes.contents);
-        const fxData = JSON.parse(fxRes.contents);
-
-        const xauUsd = gData.chart.result[0].meta.regularMarketPrice;
-        const xagUsd = sData.chart.result[0].meta.regularMarketPrice;
-        const usdInr = fxData.chart.result[0].meta.regularMarketPrice;
-
-        if (xauUsd && usdInr) {
-          const g24 = ((xauUsd * usdInr) / 31.1034768) * 1.06;
-          const s999 = ((xagUsd * usdInr) / 31.1034768) * 1.06;
-          setRatesFromSpot(g24, s999);
+        const cb = await fetch("https://api.coinbase.com/v2/exchange-rates?currency=INR").then(r => r.json());
+        if (cb && cb.data && cb.data.rates && cb.data.rates.XAU) {
+          const xauInr = 1 / parseFloat(cb.data.rates.XAU);
+          const xagInr = cb.data.rates.XAG ? (1 / parseFloat(cb.data.rates.XAG)) : (92 * 31.1034768);
+          setRatesFromSpot((xauInr / 31.1034768) * 1.06, (xagInr / 31.1034768) * 1.06);
           fetched = true;
         }
       } catch (e) {}
     }
 
-    if (!fetched) {
-      try {
-        const [xauRes, xagRes, fxRes] = await Promise.all([
-          fetch("https://api.gold-api.com/price/XAU").then(r => r.json()),
-          fetch("https://api.gold-api.com/price/XAG").then(r => r.json()),
-          fetch("https://api.frankfurter.app/latest?from=USD&to=INR").then(r => r.json())
-        ]);
-        const usdInr = (fxRes && fxRes.rates && fxRes.rates.INR) ? fxRes.rates.INR : 84.5;
-        if (xauRes && xauRes.price) {
-          const g24 = ((xauRes.price * usdInr) / 31.1034768) * 1.06;
-          const s999 = xagRes && xagRes.price ? ((xagRes.price * usdInr) / 31.1034768) * 1.06 : 95;
-          setRatesFromSpot(g24, s999);
-          fetched = true;
-        }
-      } catch (e) {}
-    }
-
+    // 3. Fallback to saved local rates
     if (!fetched) {
       const saved = JSON.parse(localStorage.getItem("HOJ_LAST_RATES") || "null");
       if (saved && saved["22K"] > 0) {
@@ -349,12 +372,26 @@
       }
     }
 
-    document.getElementById("tick24").innerText = liveRates["24K"] ? `₹${liveRates["24K"]}/g` : "रेट डालें";
-    document.getElementById("tick22").innerText = liveRates["22K"] ? `₹${liveRates["22K"]}/g` : "रेट डालें";
-    document.getElementById("tick18").innerText = liveRates["18K"] ? `₹${liveRates["18K"]}/g` : "रेट डालें";
-    document.getElementById("tickSil").innerText = liveRates["Silver 999"] ? `₹${liveRates["Silver 999"]}/g` : "रेट डालें";
-
+    updateRateTickerUI();
     if (autoFill && fetched) applyLiveRateToBill();
+  }
+
+  function manualRateOverride() {
+    const g24 = prompt("आज का 24K सोना रेट डालें (₹ प्रति ग्राम):", liveRates["24K"] || "");
+    if (g24 !== null && !isNaN(parseFloat(g24)) && parseFloat(g24) > 0) {
+      const val24 = parseFloat(g24);
+      const s999 = prompt("आज का Silver 999 रेट डालें (₹ प्रति ग्राम):", liveRates["Silver 999"] || "");
+      const valSil = (s999 !== null && !isNaN(parseFloat(s999)) && parseFloat(s999) > 0) ? parseFloat(s999) : (liveRates["Silver 999"] || 95);
+      liveRates["24K"] = Math.round(val24);
+      liveRates["22K"] = Math.round(val24 * 0.916);
+      liveRates["18K"] = Math.round(val24 * 0.750);
+      liveRates["14K"] = Math.round(val24 * 0.585);
+      liveRates["Silver 999"] = +valSil.toFixed(2);
+      liveRates["Silver 925"] = +(valSil * 0.925).toFixed(2);
+      localStorage.setItem("HOJ_LAST_RATES", JSON.stringify(liveRates));
+      updateRateTickerUI();
+      applyLiveRateToBill();
+    }
   }
 
   function onMetalChange() {
@@ -382,15 +419,16 @@
     const net = parseFloat(document.getElementById("bNet").value) || 0;
     const rate = parseFloat(document.getElementById("bRate").value) || 0;
     const makingPct = parseFloat(document.getElementById("bMakingPct").value) || 0;
+    const discount = parseFloat(document.getElementById("bDiscount").value) || 0;
     const gstPct = parseFloat(document.getElementById("bGstPct").value) || 0;
 
     const metalValue = net * rate;
     const makingAmt = Math.round(metalValue * (makingPct / 100));
     document.getElementById("bMakingAmt").value = makingAmt;
 
-    const base = metalValue + makingAmt;
-    const gstAmt = base * (gstPct / 100);
-    const total = Math.round(base + gstAmt);
+    const baseAfterDisc = Math.max(0, (metalValue + makingAmt) - discount);
+    const gstAmt = baseAfterDisc * (gstPct / 100);
+    const total = Math.round(baseAfterDisc + gstAmt);
     document.getElementById("bTotal").value = total;
 
     const paid = parseFloat(document.getElementById("bPaid").value) || 0;
@@ -402,8 +440,10 @@
     const rate = parseFloat(document.getElementById("bRate").value) || 0;
     const makingPct = parseFloat(document.getElementById("bMakingPct").value) || 0;
     const makingAmt = Math.round((net * rate) * (makingPct / 100));
+    const discount = parseFloat(document.getElementById("bDiscount").value) || 0;
     const gstPct = parseFloat(document.getElementById("bGstPct").value) || 0;
-    const gstAmt = Math.round(((net * rate) + makingAmt) * (gstPct / 100));
+    const baseAfterDisc = Math.max(0, (net * rate) + makingAmt - discount);
+    const gstAmt = Math.round(baseAfterDisc * (gstPct / 100));
 
     return {
       billNo: document.getElementById("bNo").value,
@@ -417,6 +457,7 @@
       rate: rate,
       makingPct: makingPct,
       makingCharge: makingAmt,
+      discount: discount,
       gst: gstAmt,
       grandTotal: document.getElementById("bTotal").value || 0,
       paidAmount: document.getElementById("bPaid").value || 0,
@@ -425,9 +466,48 @@
     };
   }
 
+  // Quick Direct Edit for Net Gold & Silver Stock from Top Cards
+  function getCurrentNetStock(metal) {
+    let total = 0;
+    (appData.stock || []).forEach(s => {
+      const w = parseFloat(s.Weight_g) || 0;
+      if (s.Metal === metal) total += (s.Action === "IN" ? w : -w);
+    });
+    return total;
+  }
+
+  function quickEditStock(metal) {
+    const current = getCurrentNetStock(metal);
+    const label = metal === "Gold" ? "नेट गोल्ड स्टॉक (ग्राम)" : "नेट सिल्वर स्टॉक (ग्राम)";
+    const input = prompt(`वर्तमान ${label}: ${current.toFixed(3)} g
+नया कुल स्टॉक वज़न (ग्राम) लिखें:`, current.toFixed(3));
+    if (input === null) return;
+    const target = parseFloat(input);
+    if (isNaN(target)) return alert("कृपया सही वज़न डालें!");
+    const diff = +(target - current).toFixed(3);
+    if (diff === 0) return;
+
+    const today = new Date().toISOString().split("T")[0];
+    postToSheet("addStock", {
+      date: today,
+      metal: metal,
+      purity: metal === "Gold" ? "22K (916)" : "Silver 999",
+      action: diff > 0 ? "IN" : "OUT",
+      weight: Math.abs(diff),
+      remarks: `Stock Adjusted to ${target.toFixed(3)}g`
+    });
+  }
+
   function printInvoiceObj(inv) {
     const area = document.getElementById("printArea");
     const mkPctLabel = inv.makingPct ? ` (${inv.makingPct}%)` : "";
+    const discVal = parseFloat(inv.discount || inv.Discount) || 0;
+    const discRow = discVal > 0 ? `
+      <tr>
+        <td colspan="5" style="border: 1px solid #000; padding: 6px; text-align:right;">Discount / छूट (-)</td>
+        <td style="border: 1px solid #000; padding: 6px; text-align:right;">- ₹${discVal}</td>
+      </tr>` : "";
+
     area.innerHTML = `
       <div style="border: 2px solid #000; padding: 18px; max-width: 720px; margin: auto;">
         <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px;">
@@ -470,6 +550,7 @@
               <td colspan="5" style="border: 1px solid #000; padding: 6px; text-align:right;">Making Charges${mkPctLabel}</td>
               <td style="border: 1px solid #000; padding: 6px; text-align:right;">₹${inv.MakingCharge || inv.makingCharge || 0}</td>
             </tr>
+            ${discRow}
             <tr>
               <td colspan="5" style="border: 1px solid #000; padding: 6px; text-align:right;">GST</td>
               <td style="border: 1px solid #000; padding: 6px; text-align:right;">₹${inv.GST || inv.gst || 0}</td>
@@ -520,7 +601,7 @@
       appData.invoices.push({
         BillNo: payload.billNo, Date: payload.date, CustomerName: payload.customerName, Phone: payload.phone,
         MetalType: payload.metalType, Purity: payload.purity, GrossWt: payload.grossWt, NetWt: payload.netWt,
-        Rate: payload.rate, MakingCharge: payload.makingCharge, GST: payload.gst,
+        Rate: payload.rate, MakingCharge: payload.makingCharge, Discount: payload.discount, GST: payload.gst,
         GrandTotal: payload.grandTotal, PaidAmount: payload.paidAmount, BalanceDue: payload.balanceDue, PaymentMode: payload.paymentMode
       });
       appData.stock.push({
@@ -575,7 +656,7 @@
       });
       document.getElementById("syncStatus").innerText = "शीट स्थिति: सेव हो गया (" + new Date().toLocaleTimeString() + ")";
       setTimeout(loadAllData, 1500);
-      alert("बिल/डेटा सेव हो गया! अब आप प्रिंट या WhatsApp कर सकते हैं।");
+      alert("सफलतापूर्वक अपडेट हो गया!");
     } catch (e) {
       alert("ऑफलाइन सेव हुआ: " + e.message);
     }
@@ -603,12 +684,8 @@
   }
 
   function renderDashboard(data) {
-    let gold = 0, silver = 0;
-    (data.stock || []).forEach(s => {
-      const w = parseFloat(s.Weight_g) || 0;
-      if (s.Metal === "Gold") gold += (s.Action === "IN" ? w : -w);
-      if (s.Metal === "Silver") silver += (s.Action === "IN" ? w : -w);
-    });
+    const gold = getCurrentNetStock("Gold");
+    const silver = getCurrentNetStock("Silver");
     document.getElementById("statGold").innerText = gold.toFixed(3) + " g";
     document.getElementById("statSilver").innerText = silver.toFixed(3) + " g";
 
@@ -654,7 +731,8 @@
     let ph = bill.phone.replace(/\D/g, "");
     if (ph.length === 10) ph = "91" + ph;
     const mkTxt = bill.makingPct ? `₹${bill.makingCharge} (${bill.makingPct}%)` : `₹${bill.makingCharge}`;
-    const msg = `*HARI ॐ JEWELLERS*%0AVani Vihar, Adhoiwala, Raipur Road, Dehradun%0APh: 9639200583%0A------------------------%0A*Bill No:* ${bill.billNo}%0A*Date:* ${bill.date}%0A*Customer:* ${bill.customerName}%0A*Item:* ${bill.metalType} (${bill.purity})%0A*Net Wt:* ${bill.netWt} g%0A*Rate:* ₹${bill.rate}/g%0A*Making:* ${mkTxt}%0A*GST:* ₹${bill.gst}%0A*Total Amount:* ₹${bill.grandTotal}%0A*Paid:* ₹${bill.paidAmount}%0A*Balance Due:* ₹${bill.balanceDue}%0A------------------------%0Aधन्यवाद! फिर पधारें।`;
+    const discTxt = bill.discount > 0 ? `%0A*Discount:* -₹${bill.discount}` : "";
+    const msg = `*HARI ॐ JEWELLERS*%0AVani Vihar, Adhoiwala, Raipur Road, Dehradun%0APh: 9639200583%0A------------------------%0A*Bill No:* ${bill.billNo}%0A*Date:* ${bill.date}%0A*Customer:* ${bill.customerName}%0A*Item:* ${bill.metalType} (${bill.purity})%0A*Net Wt:* ${bill.netWt} g%0A*Rate:* ₹${bill.rate}/g%0A*Making:* ${mkTxt}${discTxt}%0A*GST:* ₹${bill.gst}%0A*Total Amount:* ₹${bill.grandTotal}%0A*Paid:* ₹${bill.paidAmount}%0A*Balance Due:* ₹${bill.balanceDue}%0A------------------------%0Aधन्यवाद! फिर पधारें।`;
     window.open(`https://wa.me/${ph}?text=${msg}`, "_blank");
   }
 
@@ -673,14 +751,35 @@
   }
 
   function saveStock() {
-    postToSheet("addStock", {
-      date: document.getElementById("sDate").value,
-      metal: document.getElementById("sMetal").value,
-      purity: document.getElementById("sPurity").value,
-      action: document.getElementById("sAction").value,
-      weight: document.getElementById("sWeight").value || 0,
-      remarks: document.getElementById("sRemarks").value
-    });
+    const metal = document.getElementById("sMetal").value;
+    const purity = document.getElementById("sPurity").value;
+    const actionType = document.getElementById("sAction").value;
+    const weightVal = parseFloat(document.getElementById("sWeight").value) || 0;
+    const remarks = document.getElementById("sRemarks").value;
+    const dateVal = document.getElementById("sDate").value;
+
+    if (actionType === "SET") {
+      const current = getCurrentNetStock(metal);
+      const diff = +(weightVal - current).toFixed(3);
+      if (diff === 0) return alert("स्टॉक पहले से इसी वज़न पर है!");
+      postToSheet("addStock", {
+        date: dateVal,
+        metal: metal,
+        purity: purity,
+        action: diff > 0 ? "IN" : "OUT",
+        weight: Math.abs(diff),
+        remarks: remarks || `Stock Set to ${weightVal.toFixed(3)}g`
+      });
+    } else {
+      postToSheet("addStock", {
+        date: dateVal,
+        metal: metal,
+        purity: purity,
+        action: actionType,
+        weight: weightVal,
+        remarks: remarks
+      });
+    }
   }
 
   function saveDayBook() {
